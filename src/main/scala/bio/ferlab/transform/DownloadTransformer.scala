@@ -1,6 +1,6 @@
-package io.kf.hpo.processors.download.transform
+package bio.ferlab.transform
 
-import io.kf.hpo.models.ontology.OntologyTerm
+import bio.ferlab.ontology.OntologyTerm
 
 import scala.collection.mutable
 import scala.io.{BufferedSource, Source}
@@ -11,7 +11,7 @@ object DownloadTransformer {
   val patternName = "name: (.*)".r
   val patternIsA = "is_a: ([A-Z]+:[0-9]+) (\\{.*})? ?! (.*)".r
 
-  def using[A](r : BufferedSource)(f : BufferedSource => A) : A =
+  def using[A](r: BufferedSource)(f: BufferedSource => A): A =
     try {
       f(r)
     }
@@ -22,20 +22,20 @@ object DownloadTransformer {
   def downloadOntologyData(): List[OntologyTerm] = {
     val file = readTextFileWithTry()
     file match {
-      case Success(lines) => lines.foldLeft(List.empty[OntologyTerm]){(current, line) =>
-        if(line.trim == "[Term]") {
+      case Success(lines) => lines.foldLeft(List.empty[OntologyTerm]) { (current, line) =>
+        if (line.trim == "[Term]") {
           OntologyTerm("", "") :: current
-        } else if(line.matches(patternId.regex)) {
+        } else if (line.matches(patternId.regex)) {
           val patternId(id) = line
           val headOnto = current.head
           headOnto.copy(id = id) :: current.tail
-        } else if(line.matches(patternName.regex)) {
+        } else if (line.matches(patternName.regex)) {
           val patternName(name) = line
           val headOnto = current.head
           headOnto.copy(name = name) :: current.tail
         }
-        else if(line.matches(patternIsA.regex)) {
-          val patternIsA(id,_ , name) = line
+        else if (line.matches(patternIsA.regex)) {
+          val patternIsA(id, _, name) = line
           val headOnto = current.head
           val headOntoCopy = headOnto.copy(parents = headOnto.parents :+ OntologyTerm(id, name, Nil))
           headOntoCopy :: current.tail
@@ -59,7 +59,7 @@ object DownloadTransformer {
   def transformOntologyData(data: Map[String, OntologyTerm]) = {
     val allParents = data.values.flatMap(_.parents.map(_.id)).toSet
     data.flatMap(term => {
-      val cumulativeList =  mutable.Map.empty[OntologyTerm, Set[OntologyTerm]]
+      val cumulativeList = mutable.Map.empty[OntologyTerm, Set[OntologyTerm]]
       getAllParentPath(term._2, term._2, data, Set.empty[OntologyTerm], cumulativeList, allParents)
     })
   }
@@ -68,7 +68,7 @@ object DownloadTransformer {
     term.parents.foreach(p => {
       val parentTerm = data(p.id)
 
-      if(parentTerm.parents.isEmpty){
+      if (parentTerm.parents.isEmpty) {
         cumulativeList.get(originalTerm) match {
           case Some(value) => cumulativeList.update(originalTerm, value ++ list + p)
           case None => cumulativeList.update(originalTerm, list + p)
@@ -84,7 +84,7 @@ object DownloadTransformer {
   def readTextFileWithTry(): Try[List[String]] = {
     Try {
       val lines = using(Source.fromURL("https://raw.githubusercontent.com/obophenotype/human-phenotype-ontology/master/hp.obo")) { source =>
-//      val lines = using(Source.fromURL("file:///home/adrianpaul/Downloads/mondo.obo")) { source =>
+        //      val lines = using(Source.fromURL("file:///home/adrianpaul/Downloads/mondo.obo")) { source =>
         (for (line <- source.getLines) yield line).toList
       }
       lines

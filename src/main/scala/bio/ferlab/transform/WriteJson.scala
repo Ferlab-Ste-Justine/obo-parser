@@ -1,6 +1,6 @@
-package io.kf.hpo.processors.download.transform
+package bio.ferlab.transform
 
-import io.kf.hpo.models.ontology.OntologyTerm
+import bio.ferlab.ontology.OntologyTerm
 import org.apache.spark.sql._
 
 
