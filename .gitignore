@@ -1,0 +1,7 @@
+*.class
+*.log
+.idea/
+target/
+.java-version
+.DS_STORE
+*/kf_etl_local.conf
