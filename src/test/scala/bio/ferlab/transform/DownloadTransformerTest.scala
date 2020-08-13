@@ -27,7 +27,6 @@ class DownloadTransformerTest extends FlatSpec with Matchers  {
     val result = DownloadTransformer.transformOntologyData(data)
 
     result should contain theSameElementsAs Map(
-//      OntologyTerm(id = "A0", name = "NameA0") -> Set(), //first term (root) is not computed
       OntologyTerm("A1", "NameA1", parents = Seq(OntologyTerm("A0", "NameA0"))) -> Set(OntologyTerm("A0", "NameA0")),
       OntologyTerm("A2", "NameA2", parents = Seq(OntologyTerm("A0", "NameA0"))) -> Set(OntologyTerm("A0", "NameA0")),
       OntologyTerm("A11", "NameA11", parents = Seq(OntologyTerm("A1", "NameA1")))-> Set(OntologyTerm("A1", "NameA1"), OntologyTerm("A0", "NameA0")),

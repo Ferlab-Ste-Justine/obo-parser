@@ -6,5 +6,5 @@ case class OntologyTerm(
                          parents: Seq[OntologyTerm] = Nil,
                          is_leaf: Boolean = false
                        ) {
-  override def toString(): String = s"$name ($id)"
+  override def toString: String = s"$name ($id)"
 }

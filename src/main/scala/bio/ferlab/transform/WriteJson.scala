@@ -7,7 +7,7 @@ import org.apache.spark.sql._
 case class OntologyTermOutput (
                                 id: String,
                                 name: String,
-                                parents: Seq[String] = Nil,
+                                parents: Seq[BasicOntologyTermOutput] = Nil,
                                 ancestors: Seq[BasicOntologyTermOutput] = Nil,
                                 is_leaf: Boolean =false
                               ) {}
@@ -17,27 +17,22 @@ case class BasicOntologyTermOutput (
                                    name: String,
                                    parents: Seq[String] = Nil
                                    ){
-  override def toString(): String = s"$name ($id)"
+  override def toString: String = s"$name ($id)"
 }
 
 
 object WriteJson {
-  val spark = SparkSession.builder
-    .master("local")
-    .appName("HPO")
-    .getOrCreate()
 
-  import spark.implicits._
-
-  def toJson(data: Map[OntologyTerm, (Set[OntologyTerm], Boolean)]) = {
+  def toJson(data: Map[OntologyTerm, (Set[OntologyTerm], Boolean)])(outputDir: String)(implicit spark: SparkSession): Unit = {
+    import spark.implicits._
     data.map{ case(k, v) =>
       OntologyTermOutput(
         k.id,
         k.name,
-        k.parents.map(i => i.toString),
-        v._1.map(i => BasicOntologyTermOutput(i.id, i.name, i.parents.map(j => j.toString))).toSeq,
+        k.parents.map(i => BasicOntologyTermOutput(i.id, i.name, i.parents.map(_.toString))),
+        v._1.map(i => BasicOntologyTermOutput(i.id, i.name, i.parents.map(_.toString))).toSeq,
         v._2
-      )}.toSeq.toDF().write.mode("overwrite").json("/home/adrianpaul/projects/TEST")
+      )}.toSeq.toDF().write.mode("overwrite").json(outputDir)
   }
 }
 

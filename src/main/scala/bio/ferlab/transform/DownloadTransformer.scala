@@ -19,8 +19,8 @@ object DownloadTransformer {
       r.close()
     }
 
-  def downloadOntologyData(): List[OntologyTerm] = {
-    val file = readTextFileWithTry()
+  def downloadOntologyData(inputFileUrl: String): List[OntologyTerm] = {
+    val file = readTextFileWithTry(inputFileUrl)
     file match {
       case Success(lines) => lines.foldLeft(List.empty[OntologyTerm]) { (current, line) =>
         if (line.trim == "[Term]") {
@@ -81,10 +81,9 @@ object DownloadTransformer {
     cumulativeList
   }
 
-  def readTextFileWithTry(): Try[List[String]] = {
+  def readTextFileWithTry(url: String): Try[List[String]] = {
     Try {
-      val lines = using(Source.fromURL("https://raw.githubusercontent.com/obophenotype/human-phenotype-ontology/master/hp.obo")) { source =>
-        //      val lines = using(Source.fromURL("file:///home/adrianpaul/Downloads/mondo.obo")) { source =>
+      val lines = using(Source.fromURL(url)) { source =>
         (for (line <- source.getLines) yield line).toList
       }
       lines

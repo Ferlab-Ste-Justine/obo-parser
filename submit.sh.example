@@ -1,0 +1,2 @@
+#! /bin/bash
+${SPARK_HOME}/bin/spark-submit --master ${spark_master} --class ${full_main_class_name} ./obo-parser/target/scala-2.12/obo-parser-assembly-0.1.0-SNAPSHOT.jar ${obo_file_input_url} ${json_output_local_path}

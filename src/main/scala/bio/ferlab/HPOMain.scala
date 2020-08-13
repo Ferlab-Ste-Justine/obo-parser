@@ -2,10 +2,13 @@ package bio.ferlab
 
 import bio.ferlab.ontology.OntologyTerm
 import bio.ferlab.transform.{DownloadTransformer, WriteJson}
+import org.apache.spark.sql.SparkSession
 
 object HPOMain extends App {
 
-  val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData()
+  val Array(inputOboFileUrl, outputDir) = args
+
+  val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(inputOboFileUrl)
 
   val mapDT = dT map (d => d.id -> d) toMap
 
@@ -20,5 +23,10 @@ object HPOMain extends App {
     case (k, v) => k -> (v, true)
   }
 
-  WriteJson.toJson(result)
+  implicit val spark: SparkSession = SparkSession.builder
+    .appName("HPO")
+    .getOrCreate()
+
+
+  WriteJson.toJson(result)(outputDir)
 }
