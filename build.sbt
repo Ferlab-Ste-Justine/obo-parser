@@ -7,6 +7,7 @@ javacOptions ++= Seq("-source", "1.8", "-target", "1.8", "-Xlint")
 val spark_version = "3.0.0"
 /* Runtime */
 libraryDependencies +=  "org.apache.spark" %% "spark-sql" % spark_version % Provided
+libraryDependencies +=  "org.apache.poi" % "poi-ooxml" % "5.0.0"
 /* Test */
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.1.0" % "test"
 libraryDependencies += "org.apache.spark" %% "spark-hive" % spark_version % "test"

@@ -1,7 +1,14 @@
 package bio.ferlab.transform
 
-import bio.ferlab.ontology.OntologyTerm
+import bio.ferlab.ontology.{ICDTerm, OntologyTerm}
+import org.apache.poi.ss.usermodel.{Cell, CellType, Sheet, WorkbookFactory}
+import org.apache.poi.xssf.streaming.SXSSFWorkbook
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
 
+import java.io.{File, FileInputStream}
+import java.util.zip.ZipFile
+import javax.print.DocFlavor.URL
+import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.collection.mutable
 import scala.io.{BufferedSource, Source}
 import scala.util.{Failure, Success, Try}
@@ -88,6 +95,29 @@ object DownloadTransformer {
       }
       lines
     }
+  }
+
+  def downloadICDs(inputFileUrl: String): Unit = {
+    val f = new File(inputFileUrl)
+    val workbook = WorkbookFactory.create(f)
+    val sheet = workbook.getSheetAt(0)
+    val headerIterator = sheet.getRow(0).cellIterator()
+
+
+    val mapColumns = scala.collection.mutable.Map[String, Int]()
+    while(headerIterator.hasNext){
+      val cell = headerIterator.next()
+      val cellValue: String = cell.getStringCellValue
+      cellValue match {
+        case "8Y" => mapColumns("8Y") = cell.getColumnIndex
+        case "Title" => mapColumns("Title") = cell.getColumnIndex
+        case "ChapterNo" => mapColumns("ChapterNo") = cell.getColumnIndex
+        case "isLeaf" => mapColumns("isLeaf") = cell.getColumnIndex
+        case "noOfNonResidualChildren" => mapColumns("noOfNonResidualChildren") = cell.getColumnIndex
+        case _  =>
+      }
+    }
+    println(mapColumns)
   }
 
 }

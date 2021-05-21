@@ -51,4 +51,14 @@ class DownloadTransformerTest extends FlatSpec with Matchers  {
     )
   }
 
+
+  "downloadICDs" should "load ICDs form an excel file" in {
+//    val inputURL = "https://icd.who.int/browse11/Downloads/Download?fileName=simpletabulation.zip"
+    val inputURL = "../obo-parser/src/main/resources/ICD-11-SimpleTabulation.xlsx"
+
+    val result = DownloadTransformer.downloadICDs(inputURL)
+
+    1 should equal(1)
+  }
+
 }
