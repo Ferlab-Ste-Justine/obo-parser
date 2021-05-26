@@ -97,16 +97,11 @@ object DownloadTransformer {
     }
   }
 
-  def downloadICDs(inputFileUrl: String): Unit = {
-    val f = new File(inputFileUrl)
-    val workbook = WorkbookFactory.create(f)
-    val sheet = workbook.getSheetAt(0)
-    val headerIterator = sheet.getRow(0).cellIterator()
-
-
+  private def getICDsHeaderColumns(headerRowIterator: java.util.Iterator[Cell]): mutable.Map[String, Int] = {
     val mapColumns = scala.collection.mutable.Map[String, Int]()
-    while(headerIterator.hasNext){
-      val cell = headerIterator.next()
+
+    while(headerRowIterator.hasNext){
+      val cell = headerRowIterator.next()
       val cellValue: String = cell.getStringCellValue
       cellValue match {
         case "8Y" => mapColumns("8Y") = cell.getColumnIndex
@@ -117,7 +112,83 @@ object DownloadTransformer {
         case _  =>
       }
     }
-    println(mapColumns)
+    mapColumns
+  }
+
+  def downloadICDs(inputFileUrl: String): List[ICDTerm] = {
+    val f = new File(inputFileUrl)
+    val workbook = WorkbookFactory.create(f)
+    val sheet = workbook.getSheetAt(0)
+    val rowIterator = sheet.iterator()
+
+    val headerCols = getICDsHeaderColumns(rowIterator.next().cellIterator())
+
+    val icdTerms = mutable.MutableList[ICDTerm]()
+    val parents = mutable.Stack[String]()
+
+    val pattern = """^([- ]*)(.+)""".r
+
+    var currentLevel = 0
+    var currentParentTitle = ""
+    var rowLevel = 0
+    var rowTitle = ""
+
+    while(rowIterator.hasNext){
+
+      val row = rowIterator.next()
+
+      val eightY = Option(row.getCell(headerCols("8Y"))) match {
+        case Some(v) => Some(v.getStringCellValue)
+        case _ => None
+      }
+      val chapterNumber = row.getCell(headerCols("ChapterNo")).getStringCellValue
+      val noOfNonResidualChildren = row.getCell(headerCols("noOfNonResidualChildren")).getStringCellValue.toInt
+      val is_leaf = row.getCell(headerCols("isLeaf")).getStringCellValue.toBoolean
+      val roughTitle = row.getCell(headerCols("Title")).getStringCellValue
+
+      pattern.findAllIn(roughTitle).matchData foreach {
+        m => {
+          rowLevel = m.group(1).count(_ == '-')
+          rowTitle = m.group(2)
+        }
+      }
+
+      if(rowLevel == 0) currentParentTitle = rowTitle
+
+      val levelDelta = currentLevel - rowLevel
+      levelDelta match {
+        case _ if levelDelta < 0 =>
+          currentLevel = rowLevel
+          parents.push(s"$currentParentTitle" + s"${if(eightY.isDefined) " (" + eightY.get + ")" else ""}")
+          currentParentTitle = rowTitle
+
+        case _ if levelDelta > 0 =>
+          currentParentTitle = rowTitle
+          for(_ <- 1 to levelDelta) {
+            currentLevel -= 1
+            if(!(currentLevel < 0) ){
+              parents.pop()
+            }
+          }
+
+        case _ => currentParentTitle = rowTitle
+      }
+
+      val icd = ICDTerm(
+        eightY = eightY,
+        title = rowTitle,
+        chapterNumber = chapterNumber,
+        noOfNonResidualChildren = noOfNonResidualChildren,
+        is_leaf = is_leaf,
+        parents = parents
+      )
+      icdTerms += icd
+    }
+    icdTerms.toList
+  }
+
+  def transformIcd11To10(icds: List[ICDTerm]): List[ICDTerm] = {
+
   }
 
 }
