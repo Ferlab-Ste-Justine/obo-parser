@@ -1,7 +1,7 @@
 package bio.ferlab.transform
 
-import bio.ferlab.ontology.{ICDTerm, OntologyTerm}
-import org.apache.poi.ss.usermodel.{Cell, CellType, Sheet, WorkbookFactory}
+import bio.ferlab.ontology.{ICDTerm, ICDTermConversion, OntologyTerm}
+import org.apache.poi.ss.usermodel.{Cell, CellType, Row, Sheet, WorkbookFactory}
 import org.apache.poi.xssf.streaming.SXSSFWorkbook
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 
@@ -115,11 +115,35 @@ object DownloadTransformer {
     mapColumns
   }
 
-  def downloadICDs(inputFileUrl: String): List[ICDTerm] = {
-    val f = new File(inputFileUrl)
+  private def getICDsConversionHeaderColumns(headerRowIterator: java.util.Iterator[Cell]): mutable.Map[String, Int] = {
+    val mapColumns = scala.collection.mutable.Map[String, Int]()
+
+    for(cell <- headerRowIterator.asScala){
+      if(cell.getCellType == CellType.STRING){
+        cell.getStringCellValue match {
+          case "icd11Code" => mapColumns("icd11Code") = cell.getColumnIndex
+          case "icd11Chapter" => mapColumns("icd11Chapter") = cell.getColumnIndex
+          case "icd11Title" => mapColumns("icd11Title") = cell.getColumnIndex
+          case "icd10Code" => mapColumns("icd10Code") = cell.getColumnIndex
+          case "icd10Chapter" => mapColumns("icd10Chapter") = cell.getColumnIndex
+          case "icd10Title" => mapColumns("icd10Title") = cell.getColumnIndex
+          case _  =>
+        }
+      }
+    }
+
+    mapColumns
+  }
+
+  private def getRowIterator(inputUrl: String) = {
+    val f = new File(inputUrl)
     val workbook = WorkbookFactory.create(f)
     val sheet = workbook.getSheetAt(0)
-    val rowIterator = sheet.iterator()
+    sheet.iterator()
+  }
+
+  def downloadICDs(inputFileUrl: String): List[ICDTerm] = {
+    val rowIterator = getRowIterator(inputFileUrl)
 
     val headerCols = getICDsHeaderColumns(rowIterator.next().cellIterator())
 
@@ -187,8 +211,47 @@ object DownloadTransformer {
     icdTerms.toList
   }
 
-  def transformIcd11To10(icds: List[ICDTerm]): List[ICDTerm] = {
+  def transformIcd11To10(icds: List[ICDTerm], inputFileUrl: String): List[ICDTerm] = {
+    val rowIterator = getRowIterator(inputFileUrl)
 
+    val headerCols = getICDsConversionHeaderColumns(rowIterator.next().cellIterator())
+
+    val conversionIterator = rowIterator.asScala.flatMap(r => {
+      r.getCell(headerCols("icd10Code")).getStringCellValue.trim match {
+        case "No Mapping" => None
+        case _ => Some(ICDTermConversion(
+          fromCode = getOptionalCellValue(r, headerCols("icd11Code")),
+          toCode = getOptionalCellValue(r, headerCols("icd10Code")),
+          fromChapter = r.getCell(headerCols("icd11Chapter")).getStringCellValue,
+          toChapter = r.getCell(headerCols("icd10Chapter")).getStringCellValue,
+          fromTitle = r.getCell(headerCols("icd11Title")).getStringCellValue,
+          toTitle = r.getCell(headerCols("icd10Title")).getStringCellValue
+        ))
+      }
+    })
+
+    val conversions = conversionIterator.toList
+
+    icds.flatMap(icd => {
+      val icdTermConversion = conversions.find(t => t.fromTitle.trim == icd.title.trim)
+      icdTermConversion match {
+        case Some(t) => Some(ICDTerm(
+          eightY = t.toCode,
+          title = t.toTitle,
+          chapterNumber = t.toChapter,
+          noOfNonResidualChildren = icd.noOfNonResidualChildren, //TODO remove
+          is_leaf = icd.is_leaf,
+          parents = icd.parents //TODO convert parents
+        ))
+        case None => None
+      }
+    })
   }
 
+  private def getOptionalCellValue(row: Row, colPosition: Int) = {
+    Option(row.getCell(colPosition)) match {
+      case Some(cell) => Some(cell.getStringCellValue)
+      case None => None
+    }
+  }
 }
