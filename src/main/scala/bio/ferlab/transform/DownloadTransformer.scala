@@ -148,7 +148,7 @@ object DownloadTransformer {
     val headerCols = getICDsHeaderColumns(rowIterator.next().cellIterator())
 
     val icdTerms = mutable.MutableList[ICDTerm]()
-    val parents = mutable.Stack[String]()
+    val parents = mutable.Stack[ICDTerm]()
 
     val pattern = """^([- ]*)(.+)""".r
 
@@ -166,7 +166,6 @@ object DownloadTransformer {
         case _ => None
       }
       val chapterNumber = row.getCell(headerCols("ChapterNo")).getStringCellValue
-      val noOfNonResidualChildren = row.getCell(headerCols("noOfNonResidualChildren")).getStringCellValue.toInt
       val is_leaf = row.getCell(headerCols("isLeaf")).getStringCellValue.toBoolean
       val roughTitle = row.getCell(headerCols("Title")).getStringCellValue
 
@@ -183,7 +182,7 @@ object DownloadTransformer {
       levelDelta match {
         case _ if levelDelta < 0 =>
           currentLevel = rowLevel
-          parents.push(s"$currentParentTitle" + s"${if(eightY.isDefined) " (" + eightY.get + ")" else ""}")
+          parents.push(ICDTerm(title = currentParentTitle, eightY = eightY))
           currentParentTitle = rowTitle
 
         case _ if levelDelta > 0 =>
@@ -202,9 +201,8 @@ object DownloadTransformer {
         eightY = eightY,
         title = rowTitle,
         chapterNumber = chapterNumber,
-        noOfNonResidualChildren = noOfNonResidualChildren,
         is_leaf = is_leaf,
-        parents = parents
+        parents = parents.clone()
       )
       icdTerms += icd
     }
@@ -232,20 +230,12 @@ object DownloadTransformer {
 
     val conversions = conversionIterator.toList
 
-    icds.flatMap(icd => {
-      val icdTermConversion = conversions.find(t => t.fromTitle.trim == icd.title.trim)
-      icdTermConversion match {
-        case Some(t) => Some(ICDTerm(
-          eightY = t.toCode,
-          title = t.toTitle,
-          chapterNumber = t.toChapter,
-          noOfNonResidualChildren = icd.noOfNonResidualChildren, //TODO remove
-          is_leaf = icd.is_leaf,
-          parents = icd.parents //TODO convert parents
-        ))
-        case None => None
-      }
-    })
+    val convertedICDs = icds.flatMap(icd => {
+      convertICD(icd, conversions)
+    }).toSet
+
+    val cleanICDs = removeICDWTermsInParents(convertedICDs)
+    cleanICDs
   }
 
   private def getOptionalCellValue(row: Row, colPosition: Int) = {
@@ -253,5 +243,27 @@ object DownloadTransformer {
       case Some(cell) => Some(cell.getStringCellValue)
       case None => None
     }
+  }
+
+  private def convertICD(icd: ICDTerm, conversionDictionary: List[ICDTermConversion]): Option[ICDTerm] = {
+    val icdTermConversion = conversionDictionary.find(t => t.fromTitle.trim == icd.title.trim)
+
+    icdTermConversion match {
+      case Some(t) => Some(ICDTerm(
+        eightY = t.toCode,
+        title = t.toTitle,
+        chapterNumber = t.toChapter,
+        is_leaf = icd.is_leaf,
+        parents = icd.parents.flatMap(i => convertICD(i, conversionDictionary))
+      ))
+      case None => None
+    }
+  }
+
+  //Due to downgrade conversion, remove ICD terms that have the current term in his parents
+  //ex. term A.3 -- parents: [A.3, A.2, A.1]
+  private def removeICDWTermsInParents(icds: Set[ICDTerm]): List[ICDTerm] = {
+    val groupByTitle = icds.groupBy(_.title)
+    groupByTitle.map(r => r._2.filterNot(t => t.parents.exists(i => i.title == t.title)).head).toList
   }
 }
