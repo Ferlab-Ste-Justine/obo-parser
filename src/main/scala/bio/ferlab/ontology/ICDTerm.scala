@@ -5,17 +5,19 @@ case class ICDTerm(
                     title: String,
                     chapterNumber: String,
                     is_leaf: Boolean = false,
-                    parents: Seq[ICDTerm] = Nil
+                    parent: Option[ICDTerm] = None,
+                    ancestors: Seq[ICDTerm] = Nil
                   ) {
-//  override def toString: String = s"$title" + s"${if(eightY.isDefined) " (" + eightY.get + ")" else ""}"
+  def copyLight: ICDTerm = ICDTerm(this.eightY, this.title, this.chapterNumber)
+  override def toString: String = s"$title" + s"${if(eightY.isDefined) " (" + eightY.get + ")" else ""}"
 }
 
 object ICDTerm {
-  def apply (eightY: Option[String], title: String): ICDTerm = {
+  def apply (eightY: Option[String], title: String, chapterNumber: String): ICDTerm = {
     new ICDTerm(
       eightY = eightY,
       title = title,
-      chapterNumber = "",
+      chapterNumber = chapterNumber
     )
   }
 }

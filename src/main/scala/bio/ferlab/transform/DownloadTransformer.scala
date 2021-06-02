@@ -1,17 +1,15 @@
 package bio.ferlab.transform
 
 import bio.ferlab.ontology.{ICDTerm, ICDTermConversion, OntologyTerm}
-import org.apache.poi.ss.usermodel.{Cell, CellType, Row, Sheet, WorkbookFactory}
-import org.apache.poi.xssf.streaming.SXSSFWorkbook
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import org.apache.poi.ss.usermodel.{Cell, CellType, Row, WorkbookFactory}
 
-import java.io.{File, FileInputStream}
-import java.util.zip.ZipFile
-import javax.print.DocFlavor.URL
+import java.io.File
+import scala.{+:, ::}
 import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.collection.mutable
 import scala.io.{BufferedSource, Source}
 import scala.util.{Failure, Success, Try}
+import scala.xml.{Node, NodeSeq, XML}
 
 object DownloadTransformer {
   val patternId = "id: ([A-Z]+:[0-9]+)".r
@@ -148,12 +146,12 @@ object DownloadTransformer {
     val headerCols = getICDsHeaderColumns(rowIterator.next().cellIterator())
 
     val icdTerms = mutable.MutableList[ICDTerm]()
-    val parents = mutable.Stack[ICDTerm]()
+    val ancestors = mutable.Stack[ICDTerm]()
 
     val pattern = """^([- ]*)(.+)""".r
 
     var currentLevel = 0
-    var currentParentTitle = ""
+    var currentParentICDTerm: ICDTerm = ICDTerm(eightY = None, title = "", chapterNumber = "")
     var rowLevel = 0
     var rowTitle = ""
 
@@ -176,25 +174,26 @@ object DownloadTransformer {
         }
       }
 
-      if(rowLevel == 0) currentParentTitle = rowTitle
+      if(rowLevel == 0) currentParentICDTerm = ICDTerm(eightY = eightY, title = rowTitle, chapterNumber = chapterNumber)
 
       val levelDelta = currentLevel - rowLevel
       levelDelta match {
         case _ if levelDelta < 0 =>
           currentLevel = rowLevel
-          parents.push(ICDTerm(title = currentParentTitle, eightY = eightY))
-          currentParentTitle = rowTitle
+          ancestors.push(currentParentICDTerm)
+          currentParentICDTerm = ICDTerm(eightY = eightY, title = rowTitle, chapterNumber = chapterNumber)
 
         case _ if levelDelta > 0 =>
-          currentParentTitle = rowTitle
+          currentParentICDTerm = ICDTerm(eightY = eightY, title = rowTitle, chapterNumber = chapterNumber)
           for(_ <- 1 to levelDelta) {
             currentLevel -= 1
             if(!(currentLevel < 0) ){
-              parents.pop()
+              ancestors.pop()
             }
           }
 
-        case _ => currentParentTitle = rowTitle
+        case _ =>
+          currentParentICDTerm = ICDTerm(eightY = eightY, title = rowTitle, chapterNumber = chapterNumber)
       }
 
       val icd = ICDTerm(
@@ -202,11 +201,75 @@ object DownloadTransformer {
         title = rowTitle,
         chapterNumber = chapterNumber,
         is_leaf = is_leaf,
-        parents = parents.clone()
+        parent =
+          if(ancestors.nonEmpty)
+            Some(ancestors.top)
+          else None,
+        ancestors = ancestors.clone()
       )
       icdTerms += icd
     }
     icdTerms.toList
+  }
+
+  def downloadICDFromXML(inputFileUrl: String): List[ICDTerm] = {
+    val pattern = """^(.+) (\([A-Z].*\))""".r
+    val xml = XML.loadFile(inputFileUrl)
+    val chapters = xml \ "chapter"
+
+    var icds = mutable.MutableList[ICDTerm]()
+
+    chapters.foreach(nodeChapter => {
+      val chapter = (nodeChapter \ "name").text
+      val descRaw = (nodeChapter \ "desc").text
+      val desc = pattern.findAllIn(descRaw).group(1)
+
+      val chapterICD = ICDTerm(title = desc, chapterNumber = chapter)
+      icds += chapterICD
+
+
+      (nodeChapter \ "section").foreach(nodeSection => {
+        val descScRaw = (nodeSection \ "desc").text
+        val descSc = pattern.findAllIn(descScRaw).group(1)
+
+        val eightY = nodeSection \@ "id"
+
+        val sectionICD = ICDTerm(title = descSc, chapterNumber = chapter, eightY = Some(eightY))
+        icds += sectionICD
+
+        if((nodeSection \ "diag").nonEmpty){
+          val sectionChildIds = extractChildrenICDs(nodeSection, sectionICD, List(chapterICD, sectionICD))
+          icds ++= sectionChildIds
+        }
+        icds += sectionICD
+
+      })
+    })
+    icds.toList
+  }
+
+  def extractChildrenICDs(
+                           nodes: Node,
+                           topParent: ICDTerm,
+                           ancestors: List[ICDTerm],
+                           collection: mutable.MutableList[ICDTerm] = mutable.MutableList[ICDTerm]()
+                         ): mutable.MutableList[ICDTerm] = {
+
+    (nodes \ "diag").foreach(n => {
+      val childICD =
+        ICDTerm(title = (n \"desc").text,
+          eightY = Some((n \"name").text),
+          chapterNumber = topParent.chapterNumber,
+          parent = Some(ICDTerm(title = topParent.title,
+            eightY = topParent.eightY,
+            chapterNumber = topParent.chapterNumber)),
+          ancestors = ancestors,
+          is_leaf = (n \ "diag").isEmpty
+        )
+      collection += childICD
+      extractChildrenICDs(n, childICD, ancestors :+ childICD.copyLight, collection)
+    })
+    collection
   }
 
   def transformIcd11To10(icds: List[ICDTerm], inputFileUrl: String): List[ICDTerm] = {
@@ -252,18 +315,25 @@ object DownloadTransformer {
       case Some(t) => Some(ICDTerm(
         eightY = t.toCode,
         title = t.toTitle,
-        chapterNumber = t.toChapter,
+        chapterNumber = if(icd.chapterNumber.nonEmpty) t.toChapter else "",
         is_leaf = icd.is_leaf,
-        parents = icd.parents.flatMap(i => convertICD(i, conversionDictionary))
+        ancestors = icd.ancestors.flatMap(i => convertICD(i, conversionDictionary))
       ))
       case None => None
     }
   }
 
   //Due to downgrade conversion, remove ICD terms that have the current term in his parents
-  //ex. term A.3 -- parents: [A.3, A.2, A.1]
+  //ex. remove --> term A.3 / parents: [A.3, A.2, A.1]
   private def removeICDWTermsInParents(icds: Set[ICDTerm]): List[ICDTerm] = {
     val groupByTitle = icds.groupBy(_.title)
-    groupByTitle.map(r => r._2.filterNot(t => t.parents.exists(i => i.title == t.title)).head).toList
+    groupByTitle.map(r =>
+      ICDTerm(
+        eightY = r._2.head.eightY,
+        title = r._2.head.title,
+        chapterNumber = r._2.head.chapterNumber,
+        is_leaf = r._2.exists(t => t.is_leaf),
+        ancestors = r._2.flatMap(_.ancestors).filterNot(t => t.title == r._1).toSeq
+      )).toList
   }
 }
