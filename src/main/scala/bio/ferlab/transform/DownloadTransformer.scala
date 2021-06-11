@@ -1,6 +1,7 @@
 package bio.ferlab.transform
 
 import bio.ferlab.ontology.{ICDTerm, ICDTermConversion, OntologyTerm}
+import bio.ferlab.transform.DownloadTransformer.{patternDuoCodeLabel, patternIdDuoCode}
 import org.apache.poi.ss.usermodel.{Cell, CellType, Row, WorkbookFactory}
 
 import java.io.File
@@ -15,6 +16,12 @@ object DownloadTransformer {
   val patternId = "id: ([A-Z]+:[0-9]+)".r
   val patternName = "name: (.*)".r
   val patternIsA = "is_a: ([A-Z]+:[0-9]+) (\\{.*})? ?! (.*)".r
+
+
+
+  val patternDuoCode = "^\\s*<.*DUO_[0-9]{7} -->".r
+  val patternIdDuoCode = "^\\s*<owl:.*(DUO_[0-9]{7})\">$".r
+  val patternDuoCodeLabel = "^\\s*<rdfs:label.*>(.*)<\\/rdfs:label>$".r
 
   def using[A](r: BufferedSource)(f: BufferedSource => A): A =
     try {
@@ -210,6 +217,31 @@ object DownloadTransformer {
       icdTerms += icd
     }
     icdTerms.toList
+  }
+
+  def downloadDuoCodes(inputFileUrl: String): List[OntologyTerm] = {
+    val file = readTextFileWithTry(inputFileUrl)
+    file match {
+      case Success(lines) => lines.foldLeft(List.empty[OntologyTerm]) { (current, line) =>
+        if (line.matches(patternDuoCode.regex)) {
+          OntologyTerm("", "") :: current
+        }
+        else if (line.matches(patternIdDuoCode.regex) && current.head.id == "") {
+          val patternIdDuoCode(id) = line
+          val headOnto = current.head
+          headOnto.copy(id = id) :: current.tail
+        }
+        else if (line.matches(patternDuoCodeLabel.regex) && current.head.name == "") {
+          val patternDuoCodeLabel(label) = line
+          val headOnto = current.head
+          headOnto.copy(name = label) :: current.tail
+        }
+        else {
+          current
+        }
+      }
+      case Failure(_) => List.empty[OntologyTerm]
+    }
   }
 
   def downloadICDFromXML(inputFileUrl: String): List[ICDTerm] = {

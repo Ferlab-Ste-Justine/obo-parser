@@ -50,5 +50,16 @@ object WriteJson {
       )
     ).toDF().write.mode("overwrite").json(outputDir)
   }
+
+  def toJsonDuoCode(data: List[OntologyTerm], outputDir: String)(implicit spark: SparkSession): Unit = {
+    import spark.implicits._
+    data.map(t =>
+      OntologyTermOutput(
+        t.id,
+        t.name
+      )
+    ).toDF().write.mode("overwrite").json(outputDir)
+  }
+
 }
 

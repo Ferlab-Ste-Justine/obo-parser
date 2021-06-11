@@ -107,4 +107,15 @@ class DownloadTransformerTest extends FlatSpec with Matchers  {
     testICD10Term should equal(expectedTerm11)
   }
 
+  "downloadDuoCodes" should "download duo codes from file" in {
+    val inputURL = "https://raw.githubusercontent.com/EBISPOT/DUO/master/duo.owl"
+
+    val resultDuoCode = DownloadTransformer.downloadDuoCodes(inputURL)
+    resultDuoCode.foreach(println)
+
+
+    1 should equal(1)
+  }
+
+
 }
