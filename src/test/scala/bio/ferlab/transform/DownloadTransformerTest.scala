@@ -1,6 +1,6 @@
 package bio.ferlab.transform
 
-import bio.ferlab.ontology.OntologyTerm
+import bio.ferlab.ontology.{ICDTerm, OntologyTerm}
 import org.scalatest.{FlatSpec, Matchers}
 
 class DownloadTransformerTest extends FlatSpec with Matchers  {
@@ -49,6 +49,62 @@ class DownloadTransformerTest extends FlatSpec with Matchers  {
           OntologyTerm("A1", "NameA1")
         )
     )
+  }
+
+
+  "downloadICDs" should "load ICDs form an excel file" in {
+//    val inputURL = "https://icd.who.int/browse11/Downloads/Download?fileName=simpletabulation.zip"
+    val inputURL = "../obo-parser/src/main/resources/ICD-11-SimpleTabulation.xlsx"
+//    val inputURLConversion = "../obo-parser/src/main/resources/11To10MapToOneCategory.xlsx"
+
+    val resultICD11 = DownloadTransformer.downloadICDs(inputURL)
+
+    val expectedTerm11 = Some(ICDTerm(
+      eightY = Some("1A07.Y"),
+      title = "Other specified typhoid fever",
+      chapterNumber = "01",
+      is_leaf = true,
+      parent = Some(ICDTerm(
+        eightY = Some("1A07"), title = "Typhoid fever", chapterNumber = "01"
+      )),
+      ancestors = Seq(
+        ICDTerm(eightY = Some("1A07"), title = "Typhoid fever", chapterNumber = "01"),
+        ICDTerm(eightY = None, title = "Bacterial intestinal infections", chapterNumber = "01"),
+        ICDTerm(eightY = None, title = "Gastroenteritis or colitis of infectious origin", chapterNumber = "01"),
+        ICDTerm(eightY = None, title = "Certain infectious or parasitic diseases", chapterNumber = "01"),
+      )
+    ))
+
+
+    val testICD11Term = resultICD11.find(r => r.title == expectedTerm11.get.title)
+
+    testICD11Term should equal(expectedTerm11)
+  }
+
+  //https://www.oandp.com/opie/help/manuals/opie/index.html#!downloadorupdatetheicd10diagnosiscodelist.htm
+  "downloadICDs" should "load ICDs 10 form an XML file" in {
+    val inputURL = "../obo-parser/src/main/resources/icd10cm_tabular_2021.xml"
+
+    val resultICD10 = DownloadTransformer.downloadICDFromXML(inputURL)
+
+    val expectedTerm11 = Some(ICDTerm(
+      eightY = Some("C00.0"),
+      title = "Malignant neoplasm of external upper lip",
+      chapterNumber = "2",
+      is_leaf = true,
+      parent = Some(ICDTerm(
+        eightY = Some("C00"), title = "Malignant neoplasm of lip", chapterNumber = "2"
+      )),
+      ancestors = Seq(
+        ICDTerm(eightY = None, title = "Neoplasms", chapterNumber = "2"),
+        ICDTerm(eightY = Some("C00-C14"), title = "Malignant neoplasms of lip, oral cavity and pharynx", chapterNumber = "2"),
+        ICDTerm(eightY = Some("C00"), title = "Malignant neoplasm of lip", chapterNumber = "2"),
+      )
+    ))
+
+    val testICD10Term = resultICD10.find(r => r.title == expectedTerm11.get.title)
+
+    testICD10Term should equal(expectedTerm11)
   }
 
 }
