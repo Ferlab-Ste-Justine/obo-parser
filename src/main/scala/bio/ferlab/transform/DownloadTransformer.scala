@@ -20,7 +20,7 @@ object DownloadTransformer {
 
 
   val patternDuoCode = "^\\s*<.*DUO_[0-9]{7} -->".r
-  val patternIdDuoCode = "^\\s*<owl:.*(DUO_[0-9]{7})\">$".r
+  val patternIdDuoCode = "^\\s*<owl:.*DUO_([0-9]{7})\">$".r
   val patternDuoCodeLabel = "^\\s*<rdfs:label.*>(.*)<\\/rdfs:label>$".r
 
   def using[A](r: BufferedSource)(f: BufferedSource => A): A =

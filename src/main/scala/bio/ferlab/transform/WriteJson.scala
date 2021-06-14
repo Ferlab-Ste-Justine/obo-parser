@@ -55,7 +55,7 @@ object WriteJson {
     import spark.implicits._
     data.map(t =>
       OntologyTermOutput(
-        t.id,
+        s"DUO:${t.id}",
         t.name
       )
     ).toDF().write.mode("overwrite").json(outputDir)
