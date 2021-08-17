@@ -1,7 +1,7 @@
 package bio.ferlab
 
 import bio.ferlab.ontology.{ICDTerm, OntologyTerm}
-import bio.ferlab.transform.{DownloadTransformer, WriteJson}
+import bio.ferlab.transform.{DownloadTransformer, WriteJson, WriteParquet}
 import org.apache.spark.sql.SparkSession
 
 object HPOMain extends App {
@@ -32,7 +32,7 @@ object HPOMain extends App {
       case (k, v) => k -> (v, true)
     }
 
-    WriteJson.toJson(result)(outputDir)
+    WriteParquet.toParquet(result)(outputDir)
   }
 
 

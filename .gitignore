@@ -4,4 +4,5 @@
 target/
 .java-version
 .DS_STORE
+output
 */kf_etl_local.conf
