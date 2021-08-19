@@ -7,7 +7,6 @@ import org.apache.spark.sql.SparkSession
 object HPOMain extends App {
   implicit val spark: SparkSession = SparkSession.builder
     .appName("HPO")
-    .config("spark.master", "local")
     .getOrCreate()
 
   val Array(inputOboFileUrl, outputDir, isICD) = args
