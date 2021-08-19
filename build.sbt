@@ -13,7 +13,12 @@ libraryDependencies += "org.scalatest" %% "scalatest" % "3.1.0" % "test"
 libraryDependencies += "org.apache.spark" %% "spark-hive" % spark_version % "test"
 libraryDependencies += "org.apache.spark" %% "spark-hive" % spark_version % "test"
 test in assembly := {}
-assemblyMergeStrategy in assembly := {
+
+assembly / assemblyShadeRules := Seq(
+  ShadeRule.rename("shapeless.**" -> "shadeshapless.@1").inAll
+)
+
+assembly / assemblyMergeStrategy := {
   case "META-INF/io.netty.versions.properties" => MergeStrategy.last
   case "META-INF/native/libnetty_transport_native_epoll_x86_64.so" => MergeStrategy.last
   case "META-INF/DISCLAIMER" => MergeStrategy.last
@@ -21,8 +26,9 @@ assemblyMergeStrategy in assembly := {
   case "overview.html" => MergeStrategy.last
   case "git.properties" => MergeStrategy.discard
   case "mime.types" => MergeStrategy.first
+  case PathList("scala", "annotation", "nowarn.class" | "nowarn$.class") => MergeStrategy.first
   case x =>
-    val oldStrategy = (assemblyMergeStrategy in assembly).value
+    val oldStrategy = (assembly / assemblyMergeStrategy).value
     oldStrategy(x)
 }
 assemblyJarName in assembly := "obo-parser.jar"
