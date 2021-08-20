@@ -15,7 +15,7 @@ object WriteParquet {
         k.parents.map(_.toString),
         v._1.map(i => BasicOntologyTermOutput(i.id, i.name, i.parents.map(_.toString))).toSeq,
         v._2
-      )}.toSeq.toDF().write.parquet(outputDir)
+      )}.toSeq.toDF().write.mode(SaveMode.Overwrite).parquet(outputDir)
   }
 }
 
