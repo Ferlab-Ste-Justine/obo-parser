@@ -9,7 +9,8 @@ case class OntologyTermOutput (
                                 name: String,
                                 parents: Seq[String] = Nil,
                                 ancestors: Seq[BasicOntologyTermOutput] = Nil,
-                                is_leaf: Boolean =false
+                                is_leaf: Boolean =false,
+                                alt_ids: Seq[String] = Nil
                               ) {}
 
 case class BasicOntologyTermOutput (
@@ -31,7 +32,8 @@ object WriteJson {
         k.name,
         k.parents.map(_.toString),
         v._1.map(i => BasicOntologyTermOutput(i.id, i.name, i.parents.map(_.toString))).toSeq,
-        v._2
+        v._2,
+        k.alternateIds
       )}.toSeq.toDF().write.mode("overwrite").json(outputDir)
   }
 
