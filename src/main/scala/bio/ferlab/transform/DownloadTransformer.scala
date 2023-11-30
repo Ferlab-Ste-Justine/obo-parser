@@ -24,8 +24,8 @@ object DownloadTransformer {
       r.close()
     }
 
-  def downloadOntologyData(inputFileUrl: String): List[OntologyTerm] = {
-    val file = readTextFileWithTry(inputFileUrl)
+  def downloadOntologyData(fileBuffer: BufferedSource): List[OntologyTerm] = {
+    val file = readTextFileWithTry(fileBuffer)
     file match {
       case Success(lines) => lines.foldLeft(List.empty[OntologyTerm]) { (current, line) =>
         if (line.trim == "[Term]") {
@@ -61,12 +61,16 @@ object DownloadTransformer {
     seqOntologyTerm.map(t => t.copy(parents = map(t.id).parents))
   }
 
-  def transformOntologyData(data: Map[String, OntologyTerm]) = {
+  def transformOntologyData(data: Map[String, OntologyTerm]): Map[OntologyTerm, Set[OntologyTerm]] = {
     val allParents = data.values.flatMap(_.parents.map(_.id)).toSet
     data.flatMap(term => {
       val cumulativeList = mutable.Map.empty[OntologyTerm, Set[OntologyTerm]]
       getAllParentPath(term._2, term._2, data, Set.empty[OntologyTerm], cumulativeList, allParents)
     })
+  }
+
+  def filterOntologiesForTopNode(ontologyWithParents: Map[OntologyTerm, Set[OntologyTerm]], desiredTopNode: String): Map[OntologyTerm, Set[OntologyTerm]] = {
+    ontologyWithParents.filter(t => t._2.map(_.id).contains(desiredTopNode) || t._1.id == desiredTopNode)
   }
 
   def getAllParentPath(term: OntologyTerm, originalTerm: OntologyTerm, data: Map[String, OntologyTerm], list: Set[OntologyTerm], cumulativeList: mutable.Map[OntologyTerm, Set[OntologyTerm]], allParents: Set[String]): mutable.Map[OntologyTerm, Set[OntologyTerm]] = {
@@ -86,9 +90,9 @@ object DownloadTransformer {
     cumulativeList
   }
 
-  def readTextFileWithTry(url: String): Try[List[String]] = {
+  private def readTextFileWithTry(file: BufferedSource): Try[List[String]] = {
     Try {
-      val lines = using(Source.fromURL(url)) { source =>
+      val lines = using(file) { source =>
         (for (line <- source.getLines) yield line).toList
       }
       lines

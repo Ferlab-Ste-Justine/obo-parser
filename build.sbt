@@ -4,13 +4,14 @@ name := "obo-parser"
 scalaVersion := "2.12.12"
 organization := "bio.ferlab"
 javacOptions ++= Seq("-source", "1.8", "-target", "1.8", "-Xlint")
-val spark_version = "3.0.0"
+val spark_version = "3.3.1"
 /* Runtime */
 libraryDependencies += "org.apache.spark" %% "spark-sql" % spark_version % Provided
+libraryDependencies += "org.apache.hadoop" % "hadoop-aws" % spark_version % Provided
+libraryDependencies += "com.github.pureconfig" %% "pureconfig" % "0.15.0"
 libraryDependencies += "org.apache.poi" % "poi-ooxml" % "5.0.0"
 /* Test */
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.1.0" % "test"
-libraryDependencies += "org.apache.spark" %% "spark-hive" % spark_version % "test"
 libraryDependencies += "org.apache.spark" %% "spark-hive" % spark_version % "test"
 assembly / test := {}
 
