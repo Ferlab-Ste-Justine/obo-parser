@@ -1,0 +1,53 @@
+[Term]
+id: HP:1
+name: All
+
+[Term]
+id: HP:21
+name: 21
+is_a: HP:1 ! All
+
+[Term]
+id: HP:22
+name: 22
+is_a: HP:1 ! All
+
+[Term]
+id: HP:31
+name: 31
+is_a: HP:21 ! 21
+
+[Term]
+id: HP:32
+name: 32
+is_a: HP:21 ! 21
+
+[Term]
+id: HP:33
+name: 33
+is_a: HP:22 ! 22
+
+[Term]
+id: HP:34
+name: 34
+is_a: HP:22 ! 22
+
+[Term]
+id: HP:41
+name: 41
+is_a: HP:31 ! 31
+
+[Term]
+id: HP:42
+name: 42
+is_a: HP:32 ! 32
+
+[Term]
+id: HP:43
+name: 43
+is_a: HP:33 ! 33
+
+[Term]
+id: HP:44
+name: 44
+is_a: HP:34 ! 34

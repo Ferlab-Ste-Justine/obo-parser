@@ -1,40 +1,65 @@
 package bio.ferlab
 
+import bio.ferlab.config.Config
 import bio.ferlab.ontology.{ICDTerm, OntologyTerm}
+import bio.ferlab.transform.DownloadTransformer.filterOntologiesForTopNode
 import bio.ferlab.transform.{DownloadTransformer, WriteJson, WriteParquet}
 import org.apache.spark.sql.SparkSession
+import pureconfig.ConfigReader.Result
+import pureconfig._
+import pureconfig.generic.auto._
+
+import scala.io.{BufferedSource, Source}
 
 object HPOMain extends App {
+  val config =
+    ConfigSource.resources("application.conf")
+      .load[Config]
+      .getOrElse(throw new Exception("Wrong Configuration"))
+
   implicit val spark: SparkSession = SparkSession.builder
     .appName("HPO")
+    .config("fs.s3a.path.style.access", s"${config.aws.pathStyleAccess}")
+    .config("fs.s3a.endpoint", s"${config.aws.endpoint}")
     .getOrCreate()
 
-  val Array(inputOboFileUrl, outputDir, isICD) = args
+  private val inputOboFileUrl = args(0)
+  val outputDir = args(1)
+  private val isICD = args(2)
+  val desiredTopNode = if(args.length >= 4) Some(args(3)) else None
 
   if(isICD.trim.toLowerCase == "true"){
     val resultICD10: List[ICDTerm] = DownloadTransformer.downloadICDFromXML(inputOboFileUrl)
 
     WriteJson.toJson(resultICD10)(outputDir)
   } else {
-    val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(inputOboFileUrl)
-
-    val mapDT = dT map (d => d.id -> d) toMap
-
-    val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
-
-    val allParents = dT.flatMap(_.parents.map(_.id))
-
-    val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
-
-    val result = ontologyWithParents.map {
-      case (k, v) if allParents.contains(k.id) => k -> (v, false)
-      case (k, v) => k -> (v, true)
-    }
+    val fileBuffer = Source.fromURL(inputOboFileUrl)
+    val result = generateTermsWithAncestors(fileBuffer, desiredTopNode)
 
     WriteParquet.toParquet(result)(outputDir)
   }
 
+def generateTermsWithAncestors(fileBuffer: BufferedSource, topNode: Option[String]) = {
+  val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer)
 
+  val mapDT = dT map (d => d.id -> d) toMap
+
+  val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
+
+  val allParents = dT.flatMap(_.parents.map(_.id))
+
+  val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
+
+  val ontologyWithParentsFiltered = topNode match {
+    case Some(topNode) => filterOntologiesForTopNode(ontologyWithParents, topNode)
+    case None => ontologyWithParents
+  }
+
+  ontologyWithParentsFiltered.map {
+    case (k, v) if allParents.contains(k.id) => k -> (v, false)
+    case (k, v) => k -> (v, true)
+  }
+}
 
 
 
