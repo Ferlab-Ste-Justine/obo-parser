@@ -47,6 +47,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: obo-parser/target/scala-2.12/obo-parser.jar
+          asset_path: target/scala-2.12/obo-parser.jar
           asset_name: obo-parser.jar
           asset_content_type: application/java-archive
