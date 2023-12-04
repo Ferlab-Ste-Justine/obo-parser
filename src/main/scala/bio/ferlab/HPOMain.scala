@@ -24,10 +24,12 @@ object HPOMain extends App {
     .config("fs.s3a.endpoint", s"${config.aws.endpoint}")
     .getOrCreate()
 
-  private val inputOboFileUrl = args(0)
-  val outputDir = args(1)
-  private val isICD = args(2)
-  val desiredTopNode = if(args.length >= 4) Some(args(3)) else None
+  val Array(inputOboFileUrl, outputDir, isICD, desiredTopNode) = args
+
+  val topNode = desiredTopNode match {
+    case s if s.nonEmpty => Some(s)
+    case _ => None
+  }
 
   if(isICD.trim.toLowerCase == "true"){
     val resultICD10: List[ICDTerm] = DownloadTransformer.downloadICDFromXML(inputOboFileUrl)
@@ -35,7 +37,7 @@ object HPOMain extends App {
     WriteJson.toJson(resultICD10)(outputDir)
   } else {
     val fileBuffer = Source.fromURL(inputOboFileUrl)
-    val result = generateTermsWithAncestors(fileBuffer, desiredTopNode)
+    val result = generateTermsWithAncestors(fileBuffer, topNode)
 
     WriteParquet.toParquet(result)(outputDir)
   }
