@@ -24,7 +24,9 @@ object HPOMain extends App {
     .config("fs.s3a.endpoint", s"${config.aws.endpoint}")
     .getOrCreate()
 
-  val Array(inputOboFileUrl, outputDir, isICD, desiredTopNode) = args
+  val Array(inputOboFileUrl, bucket, ontologyType, isICD, desiredTopNode) = args
+
+  val outputDir = s"s3a://$bucket/$ontologyType/"
 
   val topNode = desiredTopNode match {
     case s if s.nonEmpty => Some(s)
