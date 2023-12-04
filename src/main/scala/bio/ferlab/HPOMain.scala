@@ -19,6 +19,7 @@ object HPOMain extends App {
 
   implicit val spark: SparkSession = SparkSession.builder
     .appName("HPO")
+    .master("local[*]")
     .config("fs.s3a.path.style.access", s"${config.aws.pathStyleAccess}")
     .config("fs.s3a.endpoint", s"${config.aws.endpoint}")
     .getOrCreate()
