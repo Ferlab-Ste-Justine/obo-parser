@@ -55,9 +55,14 @@ def generateTermsWithAncestors(fileBuffer: BufferedSource, topNode: Option[Strin
 
   val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
 
-  val ontologyWithParentsFiltered = topNode match {
-    case Some(topNode) => filterOntologiesForTopNode(ontologyWithParents, topNode)
-    case None => ontologyWithParents
+  val excludedParentsIds = topNode.flatMap(node => ontologyWithParents
+    .find{ case(term, _) => term.id == node }
+    .map{ case(_, parents) => parents.map(_.id) })
+
+  val ontologyWithParentsFiltered = (excludedParentsIds, topNode) match {
+    case (Some(parentsIds), Some(node)) => filterOntologiesForTopNode(ontologyWithParents, node, parentsIds)
+
+    case _ => ontologyWithParents
   }
 
   ontologyWithParentsFiltered.map {
@@ -65,7 +70,4 @@ def generateTermsWithAncestors(fileBuffer: BufferedSource, topNode: Option[Strin
     case (k, v) => k -> (v, true)
   }
 }
-
-
-
 }

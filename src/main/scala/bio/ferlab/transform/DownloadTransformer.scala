@@ -69,8 +69,11 @@ object DownloadTransformer {
     })
   }
 
-  def filterOntologiesForTopNode(ontologyWithParents: Map[OntologyTerm, Set[OntologyTerm]], desiredTopNode: String): Map[OntologyTerm, Set[OntologyTerm]] = {
-    ontologyWithParents.filter(t => t._2.map(_.id).contains(desiredTopNode) || t._1.id == desiredTopNode)
+  def filterOntologiesForTopNode(ontologyWithParents: Map[OntologyTerm, Set[OntologyTerm]], desiredTopNode: String, unwantedParentsIds: Set[String]):
+  Map[OntologyTerm, Set[OntologyTerm]] = {
+    ontologyWithParents
+      .filter { case(term, parents) => parents.map(_.id).contains(desiredTopNode) || term.id == desiredTopNode }
+      .map{ case(term, parents) => (term, parents.filter( r => !unwantedParentsIds.contains(r.id))) }
   }
 
   def getAllParentPath(term: OntologyTerm, originalTerm: OntologyTerm, data: Map[String, OntologyTerm], list: Set[OntologyTerm], cumulativeList: mutable.Map[OntologyTerm, Set[OntologyTerm]], allParents: Set[String]): mutable.Map[OntologyTerm, Set[OntologyTerm]] = {
