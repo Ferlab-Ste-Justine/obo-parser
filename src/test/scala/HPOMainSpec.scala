@@ -34,8 +34,13 @@ class HPOMainSpec extends AnyFlatSpec with Matchers {
     val file = Source.fromFile("src/test/scala/resources/hp.obo")
     val result = HPOMain.generateTermsWithAncestors(file, Some("HP:22"))
 
-    result.filter(t => t._1.id.startsWith("HP:2")).keySet.map(_.id) shouldEqual Set("HP:22")
-    result.filter(t => t._1.id.startsWith("HP:3")).keySet.map(_.id) shouldEqual Set("HP:33","HP:34")
-    result.filter(t => t._1.id.startsWith("HP:4")).keySet.map(_.id) shouldEqual Set("HP:43","HP:44")
+    result.filter(t => t._1.id.startsWith("HP:2")).keySet.map(_.id) should contain theSameElementsAs Set("HP:22")
+    result.filter(t => t._1.id.startsWith("HP:3")).keySet.map(_.id) should contain theSameElementsAs Set("HP:33","HP:34")
+    result.filter(t => t._1.id.startsWith("HP:4")).keySet.map(_.id) should contain theSameElementsAs Set("HP:43","HP:44")
+
+    val  testLeaf = result.find(t => t._1.id.equals("HP:44")).get._2._1
+    val testLeafParentsIds = testLeaf.map(_.id)
+    // Should not have HP:1 as one of its parents
+    testLeafParentsIds.toList should contain theSameElementsAs Seq("HP:22", "HP:34")
   }
 }
