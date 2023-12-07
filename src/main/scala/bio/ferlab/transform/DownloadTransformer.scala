@@ -15,6 +15,7 @@ object DownloadTransformer {
   val patternId = "id: ([A-Z]+:[0-9]+)".r
   val patternName = "name: (.*)".r
   val patternIsA = "is_a: ([A-Z]+:[0-9]+) (\\{.*})? ?! (.*)".r
+  val patternAltId = "^alt_id: (HP:[0-9]+|MONDO:[0-9]+)$".r
 
   def using[A](r: BufferedSource)(f: BufferedSource => A): A =
     try {
@@ -43,6 +44,12 @@ object DownloadTransformer {
           val patternIsA(id, _, name) = line
           val headOnto = current.head
           val headOntoCopy = headOnto.copy(parents = headOnto.parents :+ OntologyTerm(id, name, Nil))
+          headOntoCopy :: current.tail
+        }
+        else if (line.matches(patternAltId.regex)) {
+          val patternAltId(altId) = line
+          val headOnto = current.head
+          val headOntoCopy = headOnto.copy(alternateIds = headOnto.alternateIds :+ altId)
           headOntoCopy :: current.tail
         }
         else {
