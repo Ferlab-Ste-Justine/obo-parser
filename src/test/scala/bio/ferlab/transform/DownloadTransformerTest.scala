@@ -1,9 +1,10 @@
 package bio.ferlab.transform
 
 import bio.ferlab.ontology.{ICDTerm, OntologyTerm}
-import org.scalatest.{FlatSpec, Matchers}
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
 
-class DownloadTransformerTest extends FlatSpec with Matchers  {
+class DownloadTransformerTest extends AnyFlatSpec with Matchers  {
 
   val a0: OntologyTerm = OntologyTerm("A0", "NameA0") //root
 

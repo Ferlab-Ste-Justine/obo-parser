@@ -4,7 +4,6 @@ import bio.ferlab.ontology.{ICDTerm, ICDTermConversion, OntologyTerm}
 import org.apache.poi.ss.usermodel.{Cell, CellType, Row, WorkbookFactory}
 
 import java.io.File
-import scala.{+:, ::}
 import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.collection.mutable
 import scala.io.{BufferedSource, Source}
@@ -78,9 +77,14 @@ object DownloadTransformer {
 
   def filterOntologiesForTopNode(ontologyWithParents: Map[OntologyTerm, Set[OntologyTerm]], desiredTopNode: String, unwantedParentsIds: Set[String]):
   Map[OntologyTerm, Set[OntologyTerm]] = {
+
+    val topOntologyTerm = ontologyWithParents
+      .find(t => t._1.id == desiredTopNode)
+      .map{ case(term, _) => (term.copy(parents = Seq.empty[OntologyTerm]), Set.empty[OntologyTerm]) }
+
     ontologyWithParents
-      .filter { case(term, parents) => parents.map(_.id).contains(desiredTopNode) || term.id == desiredTopNode }
-      .map{ case(term, parents) => (term, parents.filter( r => !unwantedParentsIds.contains(r.id))) }
+      .filter { case(_, parents) => parents.map(_.id).contains(desiredTopNode) }
+      .map{ case(term, parents) => (term, parents.filter( r => !unwantedParentsIds.contains(r.id))) } ++ topOntologyTerm
   }
 
   def getAllParentPath(term: OntologyTerm, originalTerm: OntologyTerm, data: Map[String, OntologyTerm], list: Set[OntologyTerm], cumulativeList: mutable.Map[OntologyTerm, Set[OntologyTerm]], allParents: Set[String]): mutable.Map[OntologyTerm, Set[OntologyTerm]] = {
