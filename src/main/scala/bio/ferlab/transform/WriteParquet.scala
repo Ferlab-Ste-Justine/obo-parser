@@ -40,7 +40,7 @@ object WriteParquet {
             array().cast("array<string>") as "parents"))
           .otherwise(col("ancestors_exp"))
         )
-        .groupBy("id", "name", "parents")
+        .groupBy("id", "name", "parents", "is_leaf", "alt_ids")
         .agg(collect_list(col("ancestors_exp_f")) as "ancestors")
 
       case _ => df
