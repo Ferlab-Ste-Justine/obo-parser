@@ -75,18 +75,6 @@ object DownloadTransformer {
     })
   }
 
-  def filterOntologiesForTopNode(ontologyWithParents: Map[OntologyTerm, Set[OntologyTerm]], desiredTopNode: String, unwantedParentsIds: Set[String]):
-  Map[OntologyTerm, Set[OntologyTerm]] = {
-
-    val topOntologyTerm = ontologyWithParents
-      .find(t => t._1.id == desiredTopNode)
-      .map{ case(term, _) => (term.copy(parents = Seq.empty[OntologyTerm]), Set.empty[OntologyTerm]) }
-
-    ontologyWithParents
-      .filter { case(_, parents) => parents.map(_.id).contains(desiredTopNode) }
-      .map{ case(term, parents) => (term, parents.filter( r => !unwantedParentsIds.contains(r.id))) } ++ topOntologyTerm
-  }
-
   def getAllParentPath(term: OntologyTerm, originalTerm: OntologyTerm, data: Map[String, OntologyTerm], list: Set[OntologyTerm], cumulativeList: mutable.Map[OntologyTerm, Set[OntologyTerm]], allParents: Set[String]): mutable.Map[OntologyTerm, Set[OntologyTerm]] = {
     term.parents.foreach(p => {
       val parentTerm = data(p.id)

@@ -2,9 +2,8 @@ package bio.ferlab
 
 import bio.ferlab.config.Config
 import bio.ferlab.ontology.{ICDTerm, OntologyTerm}
-import bio.ferlab.transform.DownloadTransformer.filterOntologiesForTopNode
 import bio.ferlab.transform.{DownloadTransformer, WriteJson, WriteParquet}
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SaveMode, SparkSession}
 import pureconfig.ConfigReader.Result
 import pureconfig._
 import pureconfig.generic.auto._
@@ -39,12 +38,14 @@ object HPOMain extends App {
     WriteJson.toJson(resultICD10)(outputDir)
   } else {
     val fileBuffer = Source.fromURL(inputOboFileUrl)
-    val result = generateTermsWithAncestors(fileBuffer, topNode)
+    val result = generateTermsWithAncestors(fileBuffer)
 
-    WriteParquet.toParquet(result)(outputDir)
+    val filteredDf = WriteParquet.filterForTopNode(result, topNode)
+
+    filteredDf.write.mode(SaveMode.Overwrite).parquet(outputDir)
   }
 
-def generateTermsWithAncestors(fileBuffer: BufferedSource, topNode: Option[String]) = {
+def generateTermsWithAncestors(fileBuffer: BufferedSource) = {
   val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer)
 
   val mapDT = dT map (d => d.id -> d) toMap
@@ -55,17 +56,7 @@ def generateTermsWithAncestors(fileBuffer: BufferedSource, topNode: Option[Strin
 
   val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
 
-  val excludedParentsIds = topNode.flatMap(node => ontologyWithParents
-    .find{ case(term, _) => term.id == node }
-    .map{ case(_, parents) => parents.map(_.id) })
-
-  val ontologyWithParentsFiltered = (excludedParentsIds, topNode) match {
-    case (Some(parentsIds), Some(node)) => filterOntologiesForTopNode(ontologyWithParents, node, parentsIds)
-
-    case _ => ontologyWithParents
-  }
-
-  ontologyWithParentsFiltered.map {
+  ontologyWithParents.map {
     case (k, v) if allParents.contains(k.id) => k -> (v, false)
     case (k, v) => k -> (v, true)
   }
