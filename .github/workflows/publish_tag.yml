@@ -50,3 +50,10 @@ jobs:
           asset_path: target/scala-2.12/obo-parser.jar
           asset_name: obo-parser.jar
           asset_content_type: application/java-archive
+      - name: Push obo-parser image on the registry
+        uses: Ferlab-Ste-Justine/action-push-image@v2
+        with:
+          username: ${{ secrets.FERLAB_DOCKER_HUB_USER }}
+          password: ${{ secrets.FERLAB_DOCKER_HUB_TOKEN }}
+          image: ferlabcrsj/obo-parser
+          tag_format: "{semver}"

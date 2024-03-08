@@ -1,0 +1,35 @@
+name: Publish SHA
+
+on:
+  push:
+    branches:
+      - master
+
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'warning'
+      tags:
+        required: false
+        description: 'Publish SHA'
+
+jobs:
+  build:
+    name: Publish SHA
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: olafurpg/setup-scala@v11
+      - name: Build Assembly
+        run: sbt clean assembly
+      - name: Publish obo-parser Image using commit sha and timestamp
+        id: publish-etl-obo-parser-image
+        uses: Ferlab-Ste-Justine/action-push-image@v2
+        with:
+          username: ${{ secrets.FERLAB_DOCKER_HUB_USER }}
+          password: ${{ secrets.FERLAB_DOCKER_HUB_TOKEN }}
+          image: ferlabcrsj/obo-parser
+          tag_format: "{sha}-{timestamp}"
+
