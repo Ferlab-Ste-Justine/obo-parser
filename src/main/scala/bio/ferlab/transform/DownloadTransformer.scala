@@ -11,10 +11,10 @@ import scala.util.{Failure, Success, Try}
 import scala.xml.{Node, NodeSeq, XML}
 
 object DownloadTransformer {
-  val patternId = "id: ([A-Z]+:[0-9]+)".r
+  val patternId = "^id: ([A-Z]+:[A-Z?0-9]+)$".r
   val patternName = "name: (.*)".r
-  val patternIsA = "is_a: ([A-Z]+:[0-9]+) (\\{.*})? ?! (.*)".r
-  val patternAltId = "^alt_id: (HP:[0-9]+|MONDO:[0-9]+)$".r
+  val patternIsA = "^is_a: ([A-Z]+:[A-Z?0-9]+) (\\{.*})? ?! (.*)$".r
+  val patternAltId = "^alt_id: (HP:[0-9]+|MONDO:[0-9]+|NCIT:A-Z?[0-9]+)$".r
 
   def using[A](r: BufferedSource)(f: BufferedSource => A): A =
     try {
@@ -28,7 +28,7 @@ object DownloadTransformer {
     val file = readTextFileWithTry(fileBuffer)
     file match {
       case Success(lines) => lines.foldLeft(List.empty[OntologyTerm]) { (current, line) =>
-        if (line.trim == "[Term]") {
+        if (line.trim == "[Term]" || line.trim == "[Typedef]") {
           OntologyTerm("", "") :: current
         } else if (line.matches(patternId.regex)) {
           val patternId(id) = line
