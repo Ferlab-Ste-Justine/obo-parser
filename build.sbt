@@ -8,8 +8,11 @@ val spark_version = "3.4.2"
 val deltaCoreVersion = "2.4.0"
 /* Runtime */
 libraryDependencies += "org.apache.spark" %% "spark-sql" % spark_version % Provided
+libraryDependencies += "org.apache.spark" %% "spark-hive" % spark_version % Provided
 libraryDependencies += "org.apache.hadoop" % "hadoop-aws" % "3.3.6" % Provided
+libraryDependencies += "org.apache.hadoop" % "hadoop-common" % "3.3.6" % Provided
 libraryDependencies += "io.delta" %% "delta-core" % deltaCoreVersion % Provided
+libraryDependencies += "io.delta" %% "delta-spark" % "3.1.0" % Provided
 libraryDependencies += "com.github.pureconfig" %% "pureconfig" % "0.15.0"
 libraryDependencies += "org.apache.poi" % "poi-ooxml" % "5.0.0"
 /* Test */

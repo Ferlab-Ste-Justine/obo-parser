@@ -3,6 +3,8 @@ package bio.ferlab
 import bio.ferlab.config.Config
 import bio.ferlab.ontology.{ICDTerm, OntologyTerm}
 import bio.ferlab.transform.{DownloadTransformer, WriteJson, WriteParquet}
+import org.apache.spark.SparkConf
+import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy.CORRECTED
 import org.apache.spark.sql.{SaveMode, SparkSession}
 import pureconfig.ConfigReader.Result
 import pureconfig._
@@ -17,10 +19,10 @@ object HPOMain extends App {
       .getOrElse(throw new Exception("Wrong Configuration"))
 
   implicit val spark: SparkSession = SparkSession.builder
-    .appName("HPO")
+    .appName("HPOMain")
     .master("local[*]")
-//    .config("fs.s3a.path.style.access", s"${config.aws.pathStyleAccess}")
-//    .config("fs.s3a.endpoint", s"${config.aws.endpoint}")
+    .config("fs.s3a.path.style.access", s"${config.aws.pathStyleAccess}")
+    .config("fs.s3a.endpoint", s"${config.aws.endpoint}")
     .getOrCreate()
 
   val Array(inputOboFileUrl, bucket, ontologyType, isICD, desiredTopNode) = args
