@@ -4,20 +4,19 @@ name := "obo-parser"
 scalaVersion := "2.12.12"
 organization := "bio.ferlab"
 javacOptions ++= Seq("-source", "1.8", "-target", "1.8", "-Xlint")
-val spark_version = "3.4.2"
-val deltaCoreVersion = "2.4.0"
+val sparkVersion = "3.5.1"
+val hadoopVersion = "3.3.4"
+val deltaCoreVersion = "3.1.0"
 /* Runtime */
-libraryDependencies += "org.apache.spark" %% "spark-sql" % spark_version % Provided
-libraryDependencies += "org.apache.spark" %% "spark-hive" % spark_version % Provided
-libraryDependencies += "org.apache.hadoop" % "hadoop-aws" % "3.3.6" % Provided
-libraryDependencies += "org.apache.hadoop" % "hadoop-common" % "3.3.6" % Provided
-libraryDependencies += "io.delta" %% "delta-core" % deltaCoreVersion % Provided
-libraryDependencies += "io.delta" %% "delta-spark" % "3.1.0" % Provided
+libraryDependencies += "org.apache.spark" %% "spark-sql" % sparkVersion % Provided
+libraryDependencies += "org.apache.hadoop" % "hadoop-aws" % hadoopVersion % Provided
+libraryDependencies += "org.apache.hadoop" % "hadoop-common" % hadoopVersion % Provided
+libraryDependencies += "io.delta" %% "delta-spark" % deltaCoreVersion % Provided
 libraryDependencies += "com.github.pureconfig" %% "pureconfig" % "0.15.0"
 libraryDependencies += "org.apache.poi" % "poi-ooxml" % "5.0.0"
 /* Test */
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.1.0" % "test"
-libraryDependencies += "org.apache.spark" %% "spark-hive" % spark_version % "test"
+libraryDependencies += "org.apache.spark" %% "spark-hive" % sparkVersion % "test"
 assembly / test := {}
 
 assembly / assemblyShadeRules := Seq(

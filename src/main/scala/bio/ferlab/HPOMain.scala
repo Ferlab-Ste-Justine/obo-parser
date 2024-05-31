@@ -3,10 +3,7 @@ package bio.ferlab
 import bio.ferlab.config.Config
 import bio.ferlab.ontology.{ICDTerm, OntologyTerm}
 import bio.ferlab.transform.{DownloadTransformer, WriteJson, WriteParquet}
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.internal.SQLConf.LegacyBehaviorPolicy.CORRECTED
 import org.apache.spark.sql.{SaveMode, SparkSession}
-import pureconfig.ConfigReader.Result
 import pureconfig._
 import pureconfig.generic.auto._
 
