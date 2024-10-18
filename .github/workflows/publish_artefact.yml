@@ -28,8 +28,8 @@ jobs:
         shell: bash
         env:
           tag: ${{ github.ref_name }}
-          SONATYPE_REALM: $OSS_SONATYPE_REALM
-          SONATYPE_HOST: $OSS_SONATYPE_HOST
+          SONATYPE_REALM: ${{ vars.OSS_SONATYPE_REALM }}
+          SONATYPE_HOST: ${{ vars.OSS_SONATYPE_HOST }}
           SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
           SONATYPE_PASSWORD: ${{ secrets.OSS_SONATYPE_PASSWORD }}
         run: |
