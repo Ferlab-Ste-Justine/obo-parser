@@ -1,0 +1,1 @@
+ThisBuild / version := sys.env.getOrElse("VERSION", "0.0.1")
