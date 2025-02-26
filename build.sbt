@@ -9,7 +9,7 @@ val deltaCoreVersion = "2.4.0"
 /* Runtime */
 libraryDependencies += "org.apache.spark" %% "spark-sql" % spark_version % Provided
 libraryDependencies += "org.apache.hadoop" % "hadoop-aws" % "3.3.6" % Provided
-libraryDependencies += "io.delta" %% "delta-core" % deltaCoreVersion % Provided
+libraryDependencies += "io.delta" %% "delta-core" % deltaCoreVersion
 libraryDependencies += "com.github.pureconfig" %% "pureconfig" % "0.15.0"
 libraryDependencies += "org.apache.poi" % "poi-ooxml" % "5.0.0"
 /* Test */
