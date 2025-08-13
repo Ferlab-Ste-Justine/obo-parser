@@ -13,6 +13,7 @@ import scala.xml.{Node, NodeSeq, XML}
 object DownloadTransformer {
   val patternId = "^id: ([A-Z]+:[A-Z?0-9]+)$".r
   val patternName = "name: (.*)".r
+  val patternNameWithFr = "name: ([^{]+) .+source_value=\"(.*)\"".r
   val patternIsA = "^is_a: ([A-Z]+:[A-Z?0-9]+) (\\{.*})? ?! (.*)$".r
   val patternAltId = "^alt_id: (HP:[0-9]+|MONDO:[0-9]+|NCIT:A-Z?[0-9]+)$".r
 
@@ -34,6 +35,10 @@ object DownloadTransformer {
           val patternId(id) = line
           val headOnto = current.head
           headOnto.copy(id = id) :: current.tail
+        } else if (line.matches(patternNameWithFr.regex)) {
+          val patternNameWithFr(nameFr, name) = line
+          val headOnto = current.head
+          headOnto.copy(name = name, nameFr = nameFr) :: current.tail
         } else if (line.matches(patternName.regex)) {
           val patternName(name) = line
           val headOnto = current.head
