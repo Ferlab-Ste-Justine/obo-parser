@@ -6,48 +6,63 @@ import bio.ferlab.transform.{DownloadTransformer, WriteJson, WriteParquet}
 import org.apache.spark.sql.{SaveMode, SparkSession}
 import pureconfig._
 import pureconfig.generic.auto._
+import mainargs._
 
 import scala.io.{BufferedSource, Source}
 
-object HPOMain extends App {
-  val config =
-    ConfigSource.resources("application.conf")
-      .load[Config]
-      .getOrElse(throw new Exception("Wrong Configuration"))
+object HPOMain {
+  @main
+  def run(
+           @arg inputOboFileUrl: String,
+           @arg ontologyType: String,
+           @arg(name = "desired-top-node", short = 'n', doc = "Desired Top Node") desiredTopNode: Option[String]
+          ): Unit = {
 
-  implicit val spark: SparkSession = SparkSession.builder
-    .appName("HPOMain")
-    .master("local[*]")
-    .config("fs.s3a.path.style.access", s"${config.aws.pathStyleAccess}")
-    .config("fs.s3a.endpoint", s"${config.aws.endpoint}")
-    .getOrCreate()
+    val config =
+      ConfigSource.resources("application.conf")
+        .load[Config]
+        .getOrElse(throw new Exception("Wrong Configuration"))
 
-  val Array(inputOboFileUrl, bucket, ontologyType, isICD, desiredTopNode) = args
+    implicit val spark: SparkSession = SparkSession.builder
+      .appName("HPOMain")
+      .master("local[*]")
+      .config("fs.s3a.path.style.access", s"${config.aws.pathStyleAccess}")
+      .config("fs.s3a.endpoint", s"${config.aws.endpoint}")
+      .getOrCreate()
 
-  val outputDir = s"s3a://$bucket/$ontologyType/"
+    val outputDir = s"s3a://${config.aws.bucketName}/${ontologyType}_terms/"
 
-  val topNode = desiredTopNode match {
-    case s if s.nonEmpty => Some(s)
-    case _ => None
+    if(ontologyType.trim.toLowerCase == "icd"){
+      val resultICD10: List[ICDTerm] = DownloadTransformer.downloadICDFromXML(inputOboFileUrl)
+
+      WriteJson.toJson(resultICD10)(outputDir)
+    } else {
+      val fileBuffer = Source.fromURL(inputOboFileUrl)
+      val result = generateTermsWithAncestors(fileBuffer, ontologyType)
+
+      val filteredDf = WriteParquet.filterForTopNode(result, desiredTopNode)
+
+      filteredDf.write.mode(SaveMode.Overwrite).parquet(outputDir)
+    }
   }
 
-  if(isICD.trim.toLowerCase == "true"){
-    val resultICD10: List[ICDTerm] = DownloadTransformer.downloadICDFromXML(inputOboFileUrl)
+  def main(args: Array[String]): Unit =
+    ParserForMethods(this).runOrThrow(args, allowPositional = true)
 
-    WriteJson.toJson(resultICD10)(outputDir)
-  } else {
-    val fileBuffer = Source.fromURL(inputOboFileUrl)
-    val result = generateTermsWithAncestors(fileBuffer)
 
-    val filteredDf = WriteParquet.filterForTopNode(result, topNode)
 
-    filteredDf.write.mode(SaveMode.Overwrite).parquet(outputDir)
+def generateTermsWithAncestors(fileBuffer: BufferedSource, ontologyType: String): Map[OntologyTerm, (Set[OntologyTerm], Boolean)] = {
+  val termPrefix = ontologyType match {
+    case "hpo" => "HP"
+    case "mondo" => "MONDO"
+    case "ncid" => "NCIT"
+    case "icd" => ""
+    case _ => throw new IllegalArgumentException(s"Unsupported ontology type: $ontologyType")
   }
 
-def generateTermsWithAncestors(fileBuffer: BufferedSource) = {
-  val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer)
+  val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer, termPrefix)
 
-  val mapDT = dT map (d => d.id -> d) toMap
+  val mapDT = dT.filterNot(t => t.isObsolete || t.id.isEmpty) map (d => d.id -> d) toMap
 
   val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
 

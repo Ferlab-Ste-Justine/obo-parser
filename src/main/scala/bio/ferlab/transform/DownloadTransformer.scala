@@ -11,9 +11,7 @@ import scala.util.{Failure, Success, Try}
 import scala.xml.{Node, NodeSeq, XML}
 
 object DownloadTransformer {
-  val patternId = "^id: ([A-Z]+:[A-Z?0-9]+)$".r
   val patternName = "name: (.*)".r
-  val patternIsA = "^is_a: ([A-Z]+:[A-Z?0-9]+) (\\{.*})? ?! (.*)$".r
   val patternAltId = "^alt_id: (HP:[0-9]+|MONDO:[0-9]+|NCIT:A-Z?[0-9]+)$".r
 
   def using[A](r: BufferedSource)(f: BufferedSource => A): A =
@@ -24,13 +22,14 @@ object DownloadTransformer {
       r.close()
     }
 
-  def downloadOntologyData(fileBuffer: BufferedSource): List[OntologyTerm] = {
+  def downloadOntologyData(fileBuffer: BufferedSource, termPrefix: String) : List[OntologyTerm] = {
     val file = readTextFileWithTry(fileBuffer)
     file match {
       case Success(lines) => lines.foldLeft(List.empty[OntologyTerm]) { (current, line) =>
         if (line.trim == "[Term]" || line.trim == "[Typedef]") {
           OntologyTerm("", "") :: current
-        } else if (line.matches(patternId.regex)) {
+        } else if (line.matches(s"^id: ($termPrefix:[A-Z?0-9]+)$$")) {
+          val patternId = s"^id: ($termPrefix:[A-Z?0-9]+)$$".r
           val patternId(id) = line
           val headOnto = current.head
           headOnto.copy(id = id) :: current.tail
@@ -38,8 +37,8 @@ object DownloadTransformer {
           val patternName(name) = line
           val headOnto = current.head
           headOnto.copy(name = name) :: current.tail
-        }
-        else if (line.matches(patternIsA.regex)) {
+        } else if (line.matches(s"^is_a: ($termPrefix:[A-Z?0-9]+) (\\{.*})? ?! (.*)$$")) {
+          val patternIsA = s"^is_a: ($termPrefix:[A-Z?0-9]+) (\\{.*})? ?! (.*)$$".r
           val patternIsA(id, _, name) = line
           val headOnto = current.head
           val headOntoCopy = headOnto.copy(parents = headOnto.parents :+ OntologyTerm(id, name, Nil))
@@ -50,6 +49,10 @@ object DownloadTransformer {
           val headOnto = current.head
           val headOntoCopy = headOnto.copy(alternateIds = headOnto.alternateIds :+ altId)
           headOntoCopy :: current.tail
+        }
+        else if (line.trim == "is_obsolete: true") {
+          val headOnto = current.head
+          headOnto.copy(isObsolete = true) :: current.tail
         }
         else {
           current
