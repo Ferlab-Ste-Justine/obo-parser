@@ -39,6 +39,7 @@ ${SPARK_HOME}/bin/spark-submit --master ${spark_master} --class ${full_main_clas
     
 - https://purl.obolibrary.org/obo/hp.obo
 - https://purl.obolibrary.org/obo/mondo.obo
+- https://purl.obolibrary.org/obo/ncit.obo
 
 2nd argument: Type of ontological terms, values can be one of those: `hpo` or `mondo` or `ncit` or `icd`.
 

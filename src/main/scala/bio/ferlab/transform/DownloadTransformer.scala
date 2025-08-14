@@ -67,8 +67,16 @@ object DownloadTransformer {
   }
 
   def addParents(seqOntologyTerm: Seq[OntologyTerm], map: Map[String, OntologyTerm]): Seq[OntologyTerm] = {
-    seqOntologyTerm.map(t => t.copy(parents = map(t.id).parents))
+    try {
+      seqOntologyTerm.map(t => t.copy(parents = map(t.id).parents))
+    } catch {
+      case e: Exception =>
+        println(seqOntologyTerm)
+        // TODO: Log the error if needed
+        Seq.empty[OntologyTerm]
+    }
   }
+
 
   def transformOntologyData(data: Map[String, OntologyTerm]): Map[OntologyTerm, Set[OntologyTerm]] = {
     val allParents = data.values.flatMap(_.parents.map(_.id)).toSet

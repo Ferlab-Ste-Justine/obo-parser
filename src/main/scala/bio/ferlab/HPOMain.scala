@@ -1,12 +1,13 @@
 package bio.ferlab
 
 import bio.ferlab.config.Config
-import bio.ferlab.ontology.{ICDTerm, OntologyTerm}
+import bio.ferlab.ontology.{FlatOntologyTerm, ICDTerm, OntologyTerm}
 import bio.ferlab.transform.{DownloadTransformer, WriteJson, WriteParquet}
-import org.apache.spark.sql.{SaveMode, SparkSession}
+import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import pureconfig._
 import pureconfig.generic.auto._
 import mainargs._
+import org.apache.spark.sql.functions.{col, collect_list, explode, explode_outer}
 
 import scala.io.{BufferedSource, Source}
 
@@ -16,7 +17,7 @@ object HPOMain {
            @arg inputOboFileUrl: String,
            @arg ontologyType: String,
            @arg(name = "desired-top-node", short = 'n', doc = "Desired Top Node") desiredTopNode: Option[String]
-          ): Unit = {
+         ): Unit = {
 
     val config =
       ConfigSource.resources("application.conf")
@@ -51,28 +52,66 @@ object HPOMain {
 
 
 
-def generateTermsWithAncestors(fileBuffer: BufferedSource, ontologyType: String): Map[OntologyTerm, (Set[OntologyTerm], Boolean)] = {
-  val termPrefix = ontologyType match {
-    case "hpo" => "HP"
-    case "mondo" => "MONDO"
-    case "ncid" => "NCIT"
-    case "icd" => ""
-    case _ => throw new IllegalArgumentException(s"Unsupported ontology type: $ontologyType")
+  def generateTermsWithAncestors(fileBuffer: BufferedSource, ontologyType: String)(implicit spark: SparkSession): Map[OntologyTerm, (Set[OntologyTerm], Boolean)] = {
+    val termPrefix = ontologyType match {
+      case "hpo" => "HP"
+      case "mondo" => "MONDO"
+      case "ncit" => "NCIT"
+      case "icd" => ""
+      case _ => throw new IllegalArgumentException(s"Unsupported ontology type: $ontologyType")
+    }
+
+    val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer, termPrefix)
+
+    val mapDT = removeObsoleteTerms(dT) map (d => d.id -> d) toMap
+
+    val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
+
+    val allParents = dT.flatMap(_.parents.map(_.id))
+
+    val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
+
+    ontologyWithParents.map {
+      case (k, v) if allParents.contains(k.id) => k -> (v, false)
+      case (k, v) => k -> (v, true)
+    }
   }
 
-  val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer, termPrefix)
+  def removeObsoleteTerms(dT: Seq[OntologyTerm])(implicit spark: SparkSession): Seq[OntologyTerm] = {
+    import spark.implicits._
+    val flatDT = dT.map(t => FlatOntologyTerm(id = t.id, name = t.name, parents = t.parents.map(_.id), is_leaf = t.is_leaf, alternateIds = t.alternateIds, isObsolete = t.isObsolete))
+    val flatDF = flatDT.toDF()
 
-  val mapDT = dT.filterNot(t => t.isObsolete || t.id.isEmpty) map (d => d.id -> d) toMap
+    val nonObsoleteDF = flatDF.filter($"isObsolete" === false && $"id" =!= "")
+    val obsoleteIdsDF = flatDF.filter($"isObsolete" === true).select($"id".as("obsolete_id"))
 
-  val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
+    val nonObsoleteDFExp = nonObsoleteDF.withColumn("parent", explode_outer($"parents")).drop($"parents")
 
-  val allParents = dT.flatMap(_.parents.map(_.id))
+    val cleanedDF = nonObsoleteDFExp
+      .join(obsoleteIdsDF, nonObsoleteDFExp("parent") === obsoleteIdsDF("obsolete_id"), "left_anti")
 
-  val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
+    val groupCols = cleanedDF.columns.filter(_ != "parent").map(col)
+    val resultDF = cleanedDF
+      .groupBy(groupCols: _*)
+      .agg(collect_list($"parent").as("parents"))
 
-  ontologyWithParents.map {
-    case (k, v) if allParents.contains(k.id) => k -> (v, false)
-    case (k, v) => k -> (v, true)
+    val rows = resultDF.collect()
+    val termMap: Map[String, (String, Boolean, Seq[String], Boolean)] = rows.map {
+      case Row(id: String, name: String, is_leaf: Boolean, alternateIds: Seq[String], isObsolete: Boolean, _: Seq[String]) =>
+        id -> (name, is_leaf, alternateIds, isObsolete)
+    }.toMap
+
+    rows.map {
+      case Row(id: String, name: String, is_leaf: Boolean, alternateIds: Seq[String], isObsolete: Boolean, parents: Seq[String]) =>
+        val parentTerms = parents.map { pid =>
+          val (pname, pleaf, paltIds, pisObsolete) = termMap.getOrElse(pid, ("", false, Seq.empty, false))
+          OntologyTerm(id = pid, name = pname, parents = Seq.empty, is_leaf = pleaf, alternateIds = paltIds, isObsolete = pisObsolete)
+        }
+        OntologyTerm(id = id, name = name, parents = parentTerms, is_leaf = is_leaf, alternateIds = alternateIds, isObsolete = isObsolete)
+    }.toSeq
   }
-}
+
+
+
+
 }
