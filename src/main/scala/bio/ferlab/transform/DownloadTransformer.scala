@@ -1,7 +1,10 @@
 package bio.ferlab.transform
 
 import bio.ferlab.ontology.{ICDTerm, ICDTermConversion, OntologyTerm}
+import com.amazonaws.services.s3.AmazonS3ClientBuilder
+import com.amazonaws.services.s3.model.GetObjectRequest
 import org.apache.poi.ss.usermodel.{Cell, CellType, Row, WorkbookFactory}
+import org.apache.spark.sql.SparkSession
 
 import java.io.File
 import scala.collection.JavaConverters.asScalaIteratorConverter
@@ -229,64 +232,49 @@ object DownloadTransformer {
     icdTerms.toList
   }
 
-  def downloadICDFromXML(inputFileUrl: String): List[ICDTerm] = {
+  def downloadICDFromXML(inputFileUrl: String)(implicit spark: SparkSession): List[OntologyTerm] = {
     val pattern = """^(.+) (\([A-Z].*\))""".r
-    val xml = XML.loadFile(inputFileUrl)
+
+    val xmlString = spark.read.textFile(s"s3a://$inputFileUrl").collect().mkString("\n")
+    val xml = scala.xml.XML.loadString(xmlString)
+
     val chapters = xml \ "chapter"
 
-    var icds = mutable.MutableList[ICDTerm]()
-
-    chapters.foreach(nodeChapter => {
+    chapters.headOption.toList.flatMap(nodeChapter => { //fixme remove headOption
       val chapter = (nodeChapter \ "name").text
       val descRaw = (nodeChapter \ "desc").text
       val desc = pattern.findAllIn(descRaw).group(1)
 
-      val chapterICD = ICDTerm(title = desc, chapterNumber = chapter)
-      icds += chapterICD
+      val chapterTerm = OntologyTerm(id = s"Chapter $chapter", name = desc)
 
+      val allSectionTerms: Seq[OntologyTerm] =
+        (nodeChapter \ "section")
+          .filter(section => (section \@ "id").nonEmpty)
+          .flatMap(nodeSection => {
+            val descScRaw = (nodeSection \ "desc").text
+            val descSc = pattern.findAllIn(descScRaw).group(1)
+            val id = nodeSection \@ "id"
 
-      (nodeChapter \ "section").foreach(nodeSection => {
-        val descScRaw = (nodeSection \ "desc").text
-        val descSc = pattern.findAllIn(descScRaw).group(1)
+            val sectionTerm = OntologyTerm(id = s"Section $id", name = desc, parents = Seq(chapterTerm))
 
-        val eightY = nodeSection \@ "id"
-
-        val sectionICD = ICDTerm(title = descSc, chapterNumber = chapter, eightY = Some(eightY))
-        icds += sectionICD
-
-        if((nodeSection \ "diag").nonEmpty){
-          val sectionChildIds = extractChildrenICDs(nodeSection, sectionICD, List(chapterICD, sectionICD))
-          icds ++= sectionChildIds
-        }
-        icds += sectionICD
-
-      })
-    })
-    icds.toList
+            extractSectionChildrenTerms(nodeSection, sectionTerm) :+ sectionTerm
+          })
+      (allSectionTerms :+ chapterTerm).toList
+    }).toList
   }
 
-  def extractChildrenICDs(
-                           nodes: Node,
-                           topParent: ICDTerm,
-                           ancestors: List[ICDTerm],
-                           collection: mutable.MutableList[ICDTerm] = mutable.MutableList[ICDTerm]()
-                         ): mutable.MutableList[ICDTerm] = {
-
-    (nodes \ "diag").foreach(n => {
-      val childICD =
-        ICDTerm(title = (n \"desc").text,
-          eightY = Some((n \"name").text),
-          chapterNumber = topParent.chapterNumber,
-          parent = Some(ICDTerm(title = topParent.title,
-            eightY = topParent.eightY,
-            chapterNumber = topParent.chapterNumber)),
-          ancestors = ancestors,
-          is_leaf = (n \ "diag").isEmpty
-        )
-      collection += childICD
-      extractChildrenICDs(n, childICD, ancestors :+ childICD.copyLight, collection)
-    })
-    collection
+  def extractSectionChildrenTerms(
+                                      nodes: Node,
+                                      parent: OntologyTerm
+                                    ): List[OntologyTerm] = {
+    (nodes \ "diag").toList.flatMap { n =>
+      val childICD = OntologyTerm(
+        id = (n \ "name").text,
+        name = (n \ "desc").text,
+        parents = Seq(parent.copy(parents = Seq.empty[OntologyTerm])),
+      )
+      childICD :: extractSectionChildrenTerms(n, childICD)
+    }
   }
 
   def transformIcd11To10(icds: List[ICDTerm], inputFileUrl: String): List[ICDTerm] = {

@@ -14,8 +14,8 @@ import scala.io.{BufferedSource, Source}
 object HPOMain {
   @main
   def run(
-           @arg inputOboFileUrl: String,
-           @arg ontologyType: String,
+           @arg(name = "file-url", short = 'f', doc = "File Url") inputFileUrl: String,
+           @arg(name = "ontology-type", short = 't', doc = "Ontology Type") ontologyType: String,
            @arg(name = "desired-top-node", short = 'n', doc = "Desired Top Node") desiredTopNode: Option[String]
          ): Unit = {
 
@@ -29,30 +29,13 @@ object HPOMain {
       .master("local[*]")
       .config("fs.s3a.path.style.access", s"${config.aws.pathStyleAccess}")
       .config("fs.s3a.endpoint", s"${config.aws.endpoint}")
+      .config("fs.s3a.access.key", s"${config.aws.accessKey}")
+      .config("fs.s3a.secret.key", s"${config.aws.secretKey}")
+      .config("fs.s3a.path.style.access", "true")
       .getOrCreate()
 
     val outputDir = s"s3a://${config.aws.bucketName}/${ontologyType}_terms/"
 
-    if(ontologyType.trim.toLowerCase == "icd"){
-      val resultICD10: List[ICDTerm] = DownloadTransformer.downloadICDFromXML(inputOboFileUrl)
-
-      WriteJson.toJson(resultICD10)(outputDir)
-    } else {
-      val fileBuffer = Source.fromURL(inputOboFileUrl)
-      val result = generateTermsWithAncestors(fileBuffer, ontologyType)
-
-      val filteredDf = WriteParquet.filterForTopNode(result, desiredTopNode)
-
-      filteredDf.write.mode(SaveMode.Overwrite).parquet(outputDir)
-    }
-  }
-
-  def main(args: Array[String]): Unit =
-    ParserForMethods(this).runOrThrow(args, allowPositional = true)
-
-
-
-  def generateTermsWithAncestors(fileBuffer: BufferedSource, ontologyType: String)(implicit spark: SparkSession): Map[OntologyTerm, (Set[OntologyTerm], Boolean)] = {
     val termPrefix = ontologyType match {
       case "hpo" => "HP"
       case "mondo" => "MONDO"
@@ -61,21 +44,50 @@ object HPOMain {
       case _ => throw new IllegalArgumentException(s"Unsupported ontology type: $ontologyType")
     }
 
-    val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer, termPrefix)
+    val filteredDf = ontologyType.trim.toLowerCase match {
+      case "icd" =>
+        val dT: Seq[OntologyTerm] = DownloadTransformer.downloadICDFromXML(inputFileUrl)
+        val mapDT = dT map (d => d.id -> d) toMap
 
-    val mapDT = removeObsoleteTerms(dT) map (d => d.id -> d) toMap
+        val allParents = dT.flatMap(_.parents.map(_.id))
+        val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
+        val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
 
-    val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
+        val result = ontologyWithParents.map {
+          case (k, v) if allParents.contains(k.id) => k -> (v, false)
+          case (k, v) => k -> (v, true)
+        }
+        val testDf = WriteParquet.filterForTopNode(result, desiredTopNode)
 
-    val allParents = dT.flatMap(_.parents.map(_.id))
+        testDf.show(false)
+        testDf
+      case _ =>
+        val fileBuffer = Source.fromURL(inputFileUrl)
+        val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer, termPrefix)
+        val mapDT = removeObsoleteTerms(dT) map (d => d.id -> d) toMap
 
-    val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
+        val allParents = dT.flatMap(_.parents.map(_.id))
 
-    ontologyWithParents.map {
-      case (k, v) if allParents.contains(k.id) => k -> (v, false)
-      case (k, v) => k -> (v, true)
+        val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
+
+        val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
+
+        val result = ontologyWithParents.map {
+          case (k, v) if allParents.contains(k.id) => k -> (v, false)
+          case (k, v) => k -> (v, true)
+        }
+
+        WriteParquet.filterForTopNode(result, desiredTopNode)
+
     }
+    filteredDf.write.mode(SaveMode.Overwrite).parquet(outputDir)
+
   }
+
+  def main(args: Array[String]): Unit =
+    ParserForMethods(this).runOrThrow(args, allowPositional = true)
+
+
 
   def removeObsoleteTerms(dT: Seq[OntologyTerm])(implicit spark: SparkSession): Seq[OntologyTerm] = {
     import spark.implicits._
