@@ -1,17 +1,15 @@
 package bio.ferlab.transform
 
 import bio.ferlab.ontology.{ICDTerm, ICDTermConversion, OntologyTerm}
-import com.amazonaws.services.s3.AmazonS3ClientBuilder
-import com.amazonaws.services.s3.model.GetObjectRequest
 import org.apache.poi.ss.usermodel.{Cell, CellType, Row, WorkbookFactory}
 import org.apache.spark.sql.SparkSession
 
 import java.io.File
 import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.collection.mutable
-import scala.io.{BufferedSource, Source}
+import scala.io.BufferedSource
 import scala.util.{Failure, Success, Try}
-import scala.xml.{Node, NodeSeq, XML}
+import scala.xml.{Elem, Node}
 
 object DownloadTransformer {
   val patternName = "name: (.*)".r
@@ -232,15 +230,12 @@ object DownloadTransformer {
     icdTerms.toList
   }
 
-  def downloadICDFromXML(inputFileUrl: String)(implicit spark: SparkSession): List[OntologyTerm] = {
+  def downloadICDFromXML(xml: Elem)(implicit spark: SparkSession): List[OntologyTerm] = {
     val pattern = """^(.+) (\([A-Z].*\))""".r
-
-    val xmlString = spark.read.textFile(s"s3a://$inputFileUrl").collect().mkString("\n")
-    val xml = scala.xml.XML.loadString(xmlString)
 
     val chapters = xml \ "chapter"
 
-    chapters.headOption.toList.flatMap(nodeChapter => { //fixme remove headOption
+    chapters.flatMap(nodeChapter => {
       val chapter = (nodeChapter \ "name").text
       val descRaw = (nodeChapter \ "desc").text
       val desc = pattern.findAllIn(descRaw).group(1)

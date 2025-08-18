@@ -1,15 +1,16 @@
 package bio.ferlab
 
 import bio.ferlab.config.Config
-import bio.ferlab.ontology.{FlatOntologyTerm, ICDTerm, OntologyTerm}
-import bio.ferlab.transform.{DownloadTransformer, WriteJson, WriteParquet}
+import bio.ferlab.ontology.{FlatOntologyTerm, OntologyTerm}
+import bio.ferlab.transform.{DownloadTransformer, WriteParquet}
+import mainargs._
+import org.apache.spark.sql.functions.{col, collect_list, explode_outer}
 import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import pureconfig._
 import pureconfig.generic.auto._
-import mainargs._
-import org.apache.spark.sql.functions.{col, collect_list, explode, explode_outer}
 
-import scala.io.{BufferedSource, Source}
+import scala.io.Source
+import scala.xml.Elem
 
 object HPOMain {
   @main
@@ -34,7 +35,7 @@ object HPOMain {
       .config("fs.s3a.path.style.access", "true")
       .getOrCreate()
 
-    val outputDir = s"s3a://${config.aws.bucketName}/${ontologyType}_terms/"
+    val outputDir = s"s3a://${config.aws.datalakeBucket}/${ontologyType}_terms/"
 
     val termPrefix = ontologyType match {
       case "hpo" => "HP"
@@ -44,44 +45,23 @@ object HPOMain {
       case _ => throw new IllegalArgumentException(s"Unsupported ontology type: $ontologyType")
     }
 
-    val filteredDf = ontologyType.trim.toLowerCase match {
+    val dT = ontologyType.trim.toLowerCase match {
       case "icd" =>
-        val dT: Seq[OntologyTerm] = DownloadTransformer.downloadICDFromXML(inputFileUrl)
-        val mapDT = dT map (d => d.id -> d) toMap
+        val xmlString = spark.read.textFile(s"s3a://$inputFileUrl").collect().mkString("\n")
+        val xml = scala.xml.XML.loadString(xmlString)
 
-        val allParents = dT.flatMap(_.parents.map(_.id))
-        val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
-        val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
+        DownloadTransformer.downloadICDFromXML(xml: Elem)
 
-        val result = ontologyWithParents.map {
-          case (k, v) if allParents.contains(k.id) => k -> (v, false)
-          case (k, v) => k -> (v, true)
-        }
-        val testDf = WriteParquet.filterForTopNode(result, desiredTopNode)
-
-        testDf.show(false)
-        testDf
       case _ =>
         val fileBuffer = Source.fromURL(inputFileUrl)
         val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer, termPrefix)
-        val mapDT = removeObsoleteTerms(dT) map (d => d.id -> d) toMap
-
-        val allParents = dT.flatMap(_.parents.map(_.id))
-
-        val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
-
-        val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
-
-        val result = ontologyWithParents.map {
-          case (k, v) if allParents.contains(k.id) => k -> (v, false)
-          case (k, v) => k -> (v, true)
-        }
-
-        WriteParquet.filterForTopNode(result, desiredTopNode)
-
+        removeObsoleteTerms(dT)
     }
-    filteredDf.write.mode(SaveMode.Overwrite).parquet(outputDir)
 
+    val result = generateTermsWithAncestors(dT)
+
+    val filteredDf = WriteParquet.filterForTopNode(result, desiredTopNode)
+    filteredDf.write.mode(SaveMode.Overwrite).parquet(outputDir)
   }
 
   def main(args: Array[String]): Unit =
@@ -123,7 +103,16 @@ object HPOMain {
     }.toSeq
   }
 
+  def generateTermsWithAncestors(dT: Seq[OntologyTerm])(implicit spark: SparkSession): Map[OntologyTerm, (Set[OntologyTerm], Boolean)] = {
 
+    val mapDT = dT.map(d => d.id -> d).toMap
+    val allParents = dT.flatMap(_.parents.map(_.id))
+    val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
+    val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
 
-
+    ontologyWithParents.map {
+      case (k, v) if allParents.contains(k.id) => k -> (v, false)
+      case (k, v) => k -> (v, true)
+    }
+  }
 }

@@ -1,7 +1,7 @@
-import bio.ferlab.HPOMain
-import bio.ferlab.transform.WriteParquet
-import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.{SparkSession, functions}
+import bio.ferlab.HPOMain.{generateTermsWithAncestors, removeObsoleteTerms}
+import bio.ferlab.ontology.OntologyTerm
+import bio.ferlab.transform.{DownloadTransformer, OntologyTermOutput, WriteParquet}
+import org.apache.spark.sql.SparkSession
 import org.scalatest.flatspec.AnyFlatSpec
 import org.scalatest.matchers.should.Matchers
 
@@ -25,27 +25,36 @@ class HPOMainSpec extends AnyFlatSpec with Matchers {
   spark.sparkContext.setLogLevel("ERROR")
 
   "generateTermsWithAncestors" should "return all the terms" in {
-    val file = Source.fromFile("src/test/scala/resources/hp.obo")
-    val hpoAncestors = HPOMain.generateTermsWithAncestors(file)
-    val filteredDf = WriteParquet.filterForTopNode(hpoAncestors, None)
-    val result = filteredDf.select(functions.col("id")).as[String].collect()
+    val fileBuffer = Source.fromFile("src/test/scala/resources/hp.obo")
 
-    result should contain theSameElementsAs Set("HP:21", "HP:22", "HP:31", "HP:32", "HP:33", "HP:34", "HP:41", "HP:42", "HP:43", "HP:44")
+    val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer, "HP")
+    val clearDT = removeObsoleteTerms(dT)
+
+    val termWithAncestors = generateTermsWithAncestors(clearDT)
+
+    val filteredDf = WriteParquet.filterForTopNode(termWithAncestors, None)
+
+    val result = filteredDf.as[OntologyTermOutput].collect().toSeq
+
+    result.map(_.id) should contain theSameElementsAs Set("HP:21", "HP:22", "HP:31", "HP:32", "HP:33", "HP:34", "HP:41", "HP:42", "HP:43", "HP:44")
   }
 
   "generateTermsWithAncestors" should "return only desired branch" in {
-    val file = Source.fromFile("src/test/scala/resources/hp.obo")
-    val hpoAncestors = HPOMain.generateTermsWithAncestors(file)
-    val filteredDf = WriteParquet.filterForTopNode(hpoAncestors, Some("HP:22"))
-    val result = filteredDf.select(functions.col("id")).as[String].collect()
+    val fileBuffer = Source.fromFile("src/test/scala/resources/hp.obo")
 
+    val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer, "HP")
+    val clearDT = removeObsoleteTerms(dT)
 
-    val test = filteredDf.select(col("id"), col("ancestors")("id")).as[(String, Seq[String])].collect
+    val termWithAncestors = generateTermsWithAncestors(clearDT)
 
-    result should contain theSameElementsAs Set("HP:33", "HP:34", "HP:43", "HP:44")
+    val filteredDf = WriteParquet.filterForTopNode(termWithAncestors, Some("HP:22"))
 
-    val hp4 = test.find(_._1 == "HP:44").get
+    val result = filteredDf.as[OntologyTermOutput].collect().toSeq
 
-    hp4._2 should contain theSameElementsAs Seq("HP:22", "HP:34")
+    result.map(_.id) should contain theSameElementsAs Set("HP:33", "HP:34", "HP:43", "HP:44")
+
+    val hp4 = result.find(e => e.id == "HP:44").get
+    hp4.ancestors.map(_.id) should contain theSameElementsAs Seq("HP:22", "HP:34")
   }
+
 }
