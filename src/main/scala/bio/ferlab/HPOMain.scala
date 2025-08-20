@@ -1,63 +1,118 @@
 package bio.ferlab
 
 import bio.ferlab.config.Config
-import bio.ferlab.ontology.{ICDTerm, OntologyTerm}
-import bio.ferlab.transform.{DownloadTransformer, WriteJson, WriteParquet}
-import org.apache.spark.sql.{SaveMode, SparkSession}
+import bio.ferlab.ontology.{FlatOntologyTerm, OntologyTerm}
+import bio.ferlab.transform.{DownloadTransformer, WriteParquet}
+import mainargs._
+import org.apache.spark.sql.functions.{col, collect_list, explode_outer}
+import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import pureconfig._
 import pureconfig.generic.auto._
 
-import scala.io.{BufferedSource, Source}
+import scala.io.Source
+import scala.xml.Elem
 
-object HPOMain extends App {
-  val config =
-    ConfigSource.resources("application.conf")
-      .load[Config]
-      .getOrElse(throw new Exception("Wrong Configuration"))
+object HPOMain {
+  @main
+  def run(
+           @arg(name = "file-url", short = 'f', doc = "File Url") inputFileUrl: String,
+           @arg(name = "ontology-type", short = 't', doc = "Ontology Type") ontologyType: String,
+           @arg(name = "desired-top-node", short = 'n', doc = "Desired Top Node") desiredTopNode: Option[String]
+         ): Unit = {
 
-  implicit val spark: SparkSession = SparkSession.builder
-    .appName("HPOMain")
-    .master("local[*]")
-    .config("fs.s3a.path.style.access", s"${config.aws.pathStyleAccess}")
-    .config("fs.s3a.endpoint", s"${config.aws.endpoint}")
-    .getOrCreate()
+    val config =
+      ConfigSource.resources("application.conf")
+        .load[Config]
+        .getOrElse(throw new Exception("Wrong Configuration"))
 
-  val Array(inputOboFileUrl, bucket, ontologyType, isICD, desiredTopNode) = args
+    implicit val spark: SparkSession = SparkSession.builder
+      .appName("HPOMain")
+      .master("local[*]")
+      .config("fs.s3a.path.style.access", s"${config.aws.pathStyleAccess}")
+      .config("fs.s3a.endpoint", s"${config.aws.endpoint}")
+      .config("fs.s3a.access.key", s"${config.aws.accessKey}")
+      .config("fs.s3a.secret.key", s"${config.aws.secretKey}")
+      .config("fs.s3a.path.style.access", "true")
+      .getOrCreate()
 
-  val outputDir = s"s3a://$bucket/$ontologyType/"
+    val outputDir = s"s3a://${config.aws.datalakeBucket}/${ontologyType}_terms/"
 
-  val topNode = desiredTopNode match {
-    case s if s.nonEmpty => Some(s)
-    case _ => None
-  }
+    val termPrefix = ontologyType match {
+      case "hpo" => "HP"
+      case "mondo" => "MONDO"
+      case "ncit" => "NCIT"
+      case "icd" => ""
+      case _ => throw new IllegalArgumentException(s"Unsupported ontology type: $ontologyType")
+    }
 
-  if(isICD.trim.toLowerCase == "true"){
-    val resultICD10: List[ICDTerm] = DownloadTransformer.downloadICDFromXML(inputOboFileUrl)
+    val dT = ontologyType.trim.toLowerCase match {
+      case "icd" =>
+        val xmlString = spark.read.textFile(s"s3a://$inputFileUrl").collect().mkString("\n")
+        val xml = scala.xml.XML.loadString(xmlString)
 
-    WriteJson.toJson(resultICD10)(outputDir)
-  } else {
-    val fileBuffer = Source.fromURL(inputOboFileUrl)
-    val result = generateTermsWithAncestors(fileBuffer)
+        DownloadTransformer.downloadICDFromXML(xml: Elem)
 
-    val filteredDf = WriteParquet.filterForTopNode(result, topNode)
+      case _ =>
+        val fileBuffer = Source.fromURL(inputFileUrl)
+        val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer, termPrefix)
+        removeObsoleteTerms(dT)
+    }
 
+    val result = generateTermsWithAncestors(dT)
+
+    val filteredDf = WriteParquet.filterForTopNode(result, desiredTopNode)
     filteredDf.write.mode(SaveMode.Overwrite).parquet(outputDir)
   }
 
-def generateTermsWithAncestors(fileBuffer: BufferedSource) = {
-  val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer)
+  def main(args: Array[String]): Unit =
+    ParserForMethods(this).runOrThrow(args, allowPositional = true)
 
-  val mapDT = dT map (d => d.id -> d) toMap
 
-  val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
 
-  val allParents = dT.flatMap(_.parents.map(_.id))
+  def removeObsoleteTerms(dT: Seq[OntologyTerm])(implicit spark: SparkSession): Seq[OntologyTerm] = {
+    import spark.implicits._
+    val flatDT = dT.map(t => FlatOntologyTerm(id = t.id, name = t.name, parents = t.parents.map(_.id), is_leaf = t.is_leaf, alternateIds = t.alternateIds, isObsolete = t.isObsolete))
+    val flatDF = flatDT.toDF()
 
-  val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
+    val nonObsoleteDF = flatDF.filter($"isObsolete" === false && $"id" =!= "")
+    val obsoleteIdsDF = flatDF.filter($"isObsolete" === true).select($"id".as("obsolete_id"))
 
-  ontologyWithParents.map {
-    case (k, v) if allParents.contains(k.id) => k -> (v, false)
-    case (k, v) => k -> (v, true)
+    val nonObsoleteDFExp = nonObsoleteDF.withColumn("parent", explode_outer($"parents")).drop($"parents")
+
+    val cleanedDF = nonObsoleteDFExp
+      .join(obsoleteIdsDF, nonObsoleteDFExp("parent") === obsoleteIdsDF("obsolete_id"), "left_anti")
+
+    val groupCols = cleanedDF.columns.filter(_ != "parent").map(col)
+    val resultDF = cleanedDF
+      .groupBy(groupCols: _*)
+      .agg(collect_list($"parent").as("parents"))
+
+    val rows = resultDF.collect()
+    val termMap: Map[String, (String, Boolean, Seq[String], Boolean)] = rows.map {
+      case Row(id: String, name: String, is_leaf: Boolean, alternateIds: Seq[String], isObsolete: Boolean, _: Seq[String]) =>
+        id -> (name, is_leaf, alternateIds, isObsolete)
+    }.toMap
+
+    rows.map {
+      case Row(id: String, name: String, is_leaf: Boolean, alternateIds: Seq[String], isObsolete: Boolean, parents: Seq[String]) =>
+        val parentTerms = parents.map { pid =>
+          val (pname, pleaf, paltIds, pisObsolete) = termMap.getOrElse(pid, ("", false, Seq.empty, false))
+          OntologyTerm(id = pid, name = pname, parents = Seq.empty, is_leaf = pleaf, alternateIds = paltIds, isObsolete = pisObsolete)
+        }
+        OntologyTerm(id = id, name = name, parents = parentTerms, is_leaf = is_leaf, alternateIds = alternateIds, isObsolete = isObsolete)
+    }.toSeq
   }
-}
+
+  def generateTermsWithAncestors(dT: Seq[OntologyTerm])(implicit spark: SparkSession): Map[OntologyTerm, (Set[OntologyTerm], Boolean)] = {
+
+    val mapDT = dT.map(d => d.id -> d).toMap
+    val allParents = dT.flatMap(_.parents.map(_.id))
+    val dTwAncestorsParents = DownloadTransformer.addParentsToAncestors(mapDT)
+    val ontologyWithParents = DownloadTransformer.transformOntologyData(dTwAncestorsParents)
+
+    ontologyWithParents.map {
+      case (k, v) if allParents.contains(k.id) => k -> (v, false)
+      case (k, v) => k -> (v, true)
+    }
+  }
 }

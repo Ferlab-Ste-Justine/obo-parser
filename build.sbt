@@ -14,6 +14,7 @@ libraryDependencies += "org.apache.hadoop" % "hadoop-common" % hadoopVersion % P
 libraryDependencies += "io.delta" %% "delta-spark" % deltaCoreVersion % Provided
 libraryDependencies += "com.github.pureconfig" %% "pureconfig" % "0.15.0"
 libraryDependencies += "org.apache.poi" % "poi-ooxml" % "5.0.0"
+libraryDependencies += "com.lihaoyi" %% "mainargs" % "0.7.2"
 /* Test */
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.1.0" % "test"
 libraryDependencies += "org.apache.spark" %% "spark-hive" % sparkVersion % "test"

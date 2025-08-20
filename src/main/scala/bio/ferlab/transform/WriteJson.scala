@@ -36,21 +36,5 @@ object WriteJson {
         k.alternateIds
       )}.toSeq.toDF().write.mode("overwrite").json(outputDir)
   }
-
-  def toJson(data: List[ICDTerm])(outputDir: String)(implicit spark: SparkSession): Unit = {
-    import spark.implicits._
-    data.map(t =>
-      OntologyTermOutput(
-        t.eightY.getOrElse("") + "|" + t.chapterNumber,
-        t.title,
-        t.parent match {
-          case Some(parent) => Seq(parent.toString)
-          case None => Nil
-        },
-        t.ancestors.map(i => BasicOntologyTermOutput(i.eightY.getOrElse(""), i.title)),
-        t.is_leaf
-      )
-    ).toDF().write.mode("overwrite").json(outputDir)
-  }
 }
 

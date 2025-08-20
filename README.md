@@ -32,3 +32,21 @@ Two arguments is required to executing a build with Obo Parser : `obo_file_input
 ```
 ${SPARK_HOME}/bin/spark-submit --master ${spark_master} --class ${full_main_class_name} ./obo-parser/target/scala-2.12/obo-parser-assembly-0.1.0-SNAPSHOT.jar ${obo_file_input_url} ${json_output_local_path}
 ```
+
+## Arguments (Mandatory)
+
+1st argument: Path to fetch input obo file 
+    
+- https://purl.obolibrary.org/obo/hp.obo
+- https://purl.obolibrary.org/obo/mondo.obo
+- https://purl.obolibrary.org/obo/ncit.obo
+- S3 path for ICD, we fetch the XML file here: https://www.cdc.gov/nchs/icd/icd-10-cm/files.html, and add it to S3 bucket.
+
+2nd argument: Type of ontological terms, values can be one of those: `hpo` or `mondo` or `ncit` or `icd`.
+
+3rd argument (optional): ex. MONDO:0700096. 
+
+For MONDO terms, a desired to node should be provided. MONDO has many top nodes, so we need to specify which one we want to use.
+the desired top node for MONDO, it should be MONDO:0700096 (human disease). Using that as a desired top node we remove
+the same level branch MONDO:0005583 (non-human animal disease). We should get:
+MONDO:0000001 (disease) -> MONDO:0700096 (human disease) -> {REST of Mondo tree}

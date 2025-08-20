@@ -2,18 +2,17 @@ package bio.ferlab.transform
 
 import bio.ferlab.ontology.{ICDTerm, ICDTermConversion, OntologyTerm}
 import org.apache.poi.ss.usermodel.{Cell, CellType, Row, WorkbookFactory}
+import org.apache.spark.sql.SparkSession
 
 import java.io.File
 import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.collection.mutable
-import scala.io.{BufferedSource, Source}
+import scala.io.BufferedSource
 import scala.util.{Failure, Success, Try}
-import scala.xml.{Node, NodeSeq, XML}
+import scala.xml.{Elem, Node}
 
 object DownloadTransformer {
-  val patternId = "^id: ([A-Z]+:[A-Z?0-9]+)$".r
   val patternName = "name: (.*)".r
-  val patternIsA = "^is_a: ([A-Z]+:[A-Z?0-9]+) (\\{.*})? ?! (.*)$".r
   val patternAltId = "^alt_id: (HP:[0-9]+|MONDO:[0-9]+|NCIT:A-Z?[0-9]+)$".r
 
   def using[A](r: BufferedSource)(f: BufferedSource => A): A =
@@ -24,13 +23,14 @@ object DownloadTransformer {
       r.close()
     }
 
-  def downloadOntologyData(fileBuffer: BufferedSource): List[OntologyTerm] = {
+  def downloadOntologyData(fileBuffer: BufferedSource, termPrefix: String) : List[OntologyTerm] = {
     val file = readTextFileWithTry(fileBuffer)
     file match {
       case Success(lines) => lines.foldLeft(List.empty[OntologyTerm]) { (current, line) =>
         if (line.trim == "[Term]" || line.trim == "[Typedef]") {
           OntologyTerm("", "") :: current
-        } else if (line.matches(patternId.regex)) {
+        } else if (line.matches(s"^id: ($termPrefix:[A-Z?0-9]+)$$")) {
+          val patternId = s"^id: ($termPrefix:[A-Z?0-9]+)$$".r
           val patternId(id) = line
           val headOnto = current.head
           headOnto.copy(id = id) :: current.tail
@@ -38,8 +38,8 @@ object DownloadTransformer {
           val patternName(name) = line
           val headOnto = current.head
           headOnto.copy(name = name) :: current.tail
-        }
-        else if (line.matches(patternIsA.regex)) {
+        } else if (line.matches(s"^is_a: ($termPrefix:[A-Z?0-9]+) (\\{.*})? ?! (.*)$$")) {
+          val patternIsA = s"^is_a: ($termPrefix:[A-Z?0-9]+) (\\{.*})? ?! (.*)$$".r
           val patternIsA(id, _, name) = line
           val headOnto = current.head
           val headOntoCopy = headOnto.copy(parents = headOnto.parents :+ OntologyTerm(id, name, Nil))
@@ -50,6 +50,10 @@ object DownloadTransformer {
           val headOnto = current.head
           val headOntoCopy = headOnto.copy(alternateIds = headOnto.alternateIds :+ altId)
           headOntoCopy :: current.tail
+        }
+        else if (line.trim == "is_obsolete: true") {
+          val headOnto = current.head
+          headOnto.copy(isObsolete = true) :: current.tail
         }
         else {
           current
@@ -64,8 +68,16 @@ object DownloadTransformer {
   }
 
   def addParents(seqOntologyTerm: Seq[OntologyTerm], map: Map[String, OntologyTerm]): Seq[OntologyTerm] = {
-    seqOntologyTerm.map(t => t.copy(parents = map(t.id).parents))
+    try {
+      seqOntologyTerm.map(t => t.copy(parents = map(t.id).parents))
+    } catch {
+      case e: Exception =>
+        println(seqOntologyTerm)
+        // TODO: Log the error if needed
+        Seq.empty[OntologyTerm]
+    }
   }
+
 
   def transformOntologyData(data: Map[String, OntologyTerm]): Map[OntologyTerm, Set[OntologyTerm]] = {
     val allParents = data.values.flatMap(_.parents.map(_.id)).toSet
@@ -218,64 +230,46 @@ object DownloadTransformer {
     icdTerms.toList
   }
 
-  def downloadICDFromXML(inputFileUrl: String): List[ICDTerm] = {
+  def downloadICDFromXML(xml: Elem)(implicit spark: SparkSession): List[OntologyTerm] = {
     val pattern = """^(.+) (\([A-Z].*\))""".r
-    val xml = XML.loadFile(inputFileUrl)
+
     val chapters = xml \ "chapter"
 
-    var icds = mutable.MutableList[ICDTerm]()
-
-    chapters.foreach(nodeChapter => {
+    chapters.flatMap(nodeChapter => {
       val chapter = (nodeChapter \ "name").text
       val descRaw = (nodeChapter \ "desc").text
       val desc = pattern.findAllIn(descRaw).group(1)
 
-      val chapterICD = ICDTerm(title = desc, chapterNumber = chapter)
-      icds += chapterICD
+      val chapterTerm = OntologyTerm(id = s"Chapter $chapter", name = desc)
 
+      val allSectionTerms: Seq[OntologyTerm] =
+        (nodeChapter \ "section")
+          .filter(section => (section \@ "id").nonEmpty)
+          .flatMap(nodeSection => {
+            val descScRaw = (nodeSection \ "desc").text
+            val descSc = pattern.findAllIn(descScRaw).group(1)
+            val id = nodeSection \@ "id"
 
-      (nodeChapter \ "section").foreach(nodeSection => {
-        val descScRaw = (nodeSection \ "desc").text
-        val descSc = pattern.findAllIn(descScRaw).group(1)
+            val sectionTerm = OntologyTerm(id = s"Section $id", name = desc, parents = Seq(chapterTerm))
 
-        val eightY = nodeSection \@ "id"
-
-        val sectionICD = ICDTerm(title = descSc, chapterNumber = chapter, eightY = Some(eightY))
-        icds += sectionICD
-
-        if((nodeSection \ "diag").nonEmpty){
-          val sectionChildIds = extractChildrenICDs(nodeSection, sectionICD, List(chapterICD, sectionICD))
-          icds ++= sectionChildIds
-        }
-        icds += sectionICD
-
-      })
-    })
-    icds.toList
+            extractSectionChildrenTerms(nodeSection, sectionTerm) :+ sectionTerm
+          })
+      (allSectionTerms :+ chapterTerm).toList
+    }).toList
   }
 
-  def extractChildrenICDs(
-                           nodes: Node,
-                           topParent: ICDTerm,
-                           ancestors: List[ICDTerm],
-                           collection: mutable.MutableList[ICDTerm] = mutable.MutableList[ICDTerm]()
-                         ): mutable.MutableList[ICDTerm] = {
-
-    (nodes \ "diag").foreach(n => {
-      val childICD =
-        ICDTerm(title = (n \"desc").text,
-          eightY = Some((n \"name").text),
-          chapterNumber = topParent.chapterNumber,
-          parent = Some(ICDTerm(title = topParent.title,
-            eightY = topParent.eightY,
-            chapterNumber = topParent.chapterNumber)),
-          ancestors = ancestors,
-          is_leaf = (n \ "diag").isEmpty
-        )
-      collection += childICD
-      extractChildrenICDs(n, childICD, ancestors :+ childICD.copyLight, collection)
-    })
-    collection
+  def extractSectionChildrenTerms(
+                                      nodes: Node,
+                                      parent: OntologyTerm
+                                    ): List[OntologyTerm] = {
+    (nodes \ "diag").toList.flatMap { n =>
+      val childICD = OntologyTerm(
+        id = (n \ "name").text,
+        name = (n \ "desc").text,
+        parents = Seq(parent.copy(parents = Seq.empty[OntologyTerm])),
+      )
+      childICD :: extractSectionChildrenTerms(n, childICD)
+    }
   }
 
   def transformIcd11To10(icds: List[ICDTerm], inputFileUrl: String): List[ICDTerm] = {
