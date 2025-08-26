@@ -7,6 +7,7 @@ case class OntologyTerm(
                          is_leaf: Boolean = false,
                          alternateIds: Seq[String] = Nil,
                          isObsolete: Boolean = false,
+                         notes: Option[String] = None
                        ) {
   override def toString: String = s"$name ($id)"
 }

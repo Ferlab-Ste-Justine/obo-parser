@@ -1,15 +1,21 @@
 package bio.ferlab.transform
 
 import bio.ferlab.ontology.{ICDTerm, ICDTermConversion, OntologyTerm}
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.poi.hssf.usermodel.HSSFWorkbook
 import org.apache.poi.ss.usermodel.{Cell, CellType, Row, WorkbookFactory}
 import org.apache.spark.sql.SparkSession
 
-import java.io.File
+import java.io.{File, FileInputStream}
 import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.collection.mutable
 import scala.io.BufferedSource
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Success, Try, Using}
 import scala.xml.{Elem, Node}
+import org.apache.spark.sql.functions._
+
+import scala.collection.mutable.ListBuffer
 
 object DownloadTransformer {
   val patternName = "name: (.*)".r
@@ -256,6 +262,55 @@ object DownloadTransformer {
           })
       (allSectionTerms :+ chapterTerm).toList
     }).toList
+  }
+
+  def downloadICDFromXLS(path: String)(implicit fs: FileSystem): List[OntologyTerm] = {
+    def parseLevel(cell: Cell): Option[String] = cell.getCellType match {
+      case CellType.STRING if cell.getStringCellValue == "Preferred" => Some("Preferred")
+      case CellType.NUMERIC => Some(cell.getNumericCellValue.toInt.toString)
+      case _ => None
+    }
+
+    Using.Manager { use =>
+      val inputStream = use(fs.open(new Path(path)))
+      val workbook = use(new HSSFWorkbook(inputStream))
+      val sheet = workbook.getSheetAt(0)
+
+      val targetRow = (0 to sheet.getLastRowNum)
+        .map(sheet.getRow)
+        .find(row => row != null && row.getCell(0) != null && row.getCell(0).getStringCellValue == "ICDO3.2")
+        .getOrElse(throw new Exception("Header row not found"))
+
+      val currentParents = scala.collection.mutable.Map[Int, OntologyTerm]()
+      var currentLevel = 0
+
+      ((targetRow.getRowNum + 1) to sheet.getLastRowNum).flatMap { rowIdx =>
+        Option(sheet.getRow(rowIdx)).flatMap { row =>
+          val id = row.getCell(0).getStringCellValue
+          val levelOpt = parseLevel(row.getCell(1))
+          val name = row.getCell(2).getStringCellValue
+          val refCode = Option(row.getCell(3).getStringCellValue).filter(_.nonEmpty)
+
+          levelOpt.map { level =>
+            (id, level) match {
+              case (i, l) if i.isEmpty && Try(l.toInt).getOrElse(-1) == 1 =>
+                val cTerm = OntologyTerm(id = "All", name = name, parents = Seq.empty, notes = refCode)
+                currentParents(1) = cTerm
+                currentLevel = 1
+                cTerm
+              case (i, l) if Try(l.toInt).isSuccess =>
+                val lvl = l.toInt
+                val cTerm = OntologyTerm(id = i, name = name, parents = Seq(currentParents(lvl - 1)), notes = refCode)
+                currentParents(lvl) = cTerm
+                currentLevel = lvl
+                cTerm
+              case (i, l) =>
+                OntologyTerm(id = i, name = name, parents = Seq(currentParents(currentLevel)), notes = refCode)
+            }
+          }
+        }
+      }.toList
+    }.getOrElse(List.empty)
   }
 
   def extractSectionChildrenTerms(
