@@ -40,7 +40,8 @@ ${SPARK_HOME}/bin/spark-submit --master ${spark_master} --class ${full_main_clas
 - https://purl.obolibrary.org/obo/hp.obo
 - https://purl.obolibrary.org/obo/mondo.obo
 - https://purl.obolibrary.org/obo/ncit.obo
-- S3 path for ICD, we fetch the XML file here: https://www.cdc.gov/nchs/icd/icd-10-cm/files.html, and add it to S3 bucket.
+- S3 path for ICD-10, we fetch the XML file here: https://www.cdc.gov/nchs/icd/icd-10-cm/files.html, and add it to S3 bucket.
+- S3 path for ICD-O, we fetch the XLS file here: http://www.iacr.com.fr/index.php?Itemid=577, and add it to S3 bucket.
 
 2nd argument: Type of ontological terms, values can be one of those: `hpo` or `mondo` or `ncit` or `icd`.
 

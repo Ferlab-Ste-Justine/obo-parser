@@ -4,6 +4,8 @@ import bio.ferlab.config.Config
 import bio.ferlab.ontology.{FlatOntologyTerm, OntologyTerm}
 import bio.ferlab.transform.{DownloadTransformer, WriteParquet}
 import mainargs._
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.FileSystem
 import org.apache.spark.sql.functions.{col, collect_list, explode_outer}
 import org.apache.spark.sql.{Row, SaveMode, SparkSession}
 import pureconfig._
@@ -41,17 +43,21 @@ object HPOMain {
       case "hpo" => "HP"
       case "mondo" => "MONDO"
       case "ncit" => "NCIT"
-      case "icd" => ""
+      case "icd-10" | "icd-o" => ""
       case _ => throw new IllegalArgumentException(s"Unsupported ontology type: $ontologyType")
     }
 
     val dT = ontologyType.trim.toLowerCase match {
-      case "icd" =>
-        val xmlString = spark.read.textFile(s"s3a://$inputFileUrl").collect().mkString("\n")
+      case "icd-10" =>
+        val xmlString = spark.read.textFile(s"$inputFileUrl").collect().mkString("\n")
         val xml = scala.xml.XML.loadString(xmlString)
 
         DownloadTransformer.downloadICDFromXML(xml: Elem)
 
+      case "icd-o" =>
+        implicit val fs: FileSystem = s3FileSystem(config)
+
+        DownloadTransformer.downloadICDFromXLS(inputFileUrl: String)
       case _ =>
         val fileBuffer = Source.fromURL(inputFileUrl)
         val dT: Seq[OntologyTerm] = DownloadTransformer.downloadOntologyData(fileBuffer, termPrefix)
@@ -114,5 +120,15 @@ object HPOMain {
       case (k, v) if allParents.contains(k.id) => k -> (v, false)
       case (k, v) => k -> (v, true)
     }
+  }
+
+  def s3FileSystem(config: Config): FileSystem = {
+    val conf = new Configuration()
+    conf.set("fs.s3a.endpoint", config.aws.endpoint)
+    conf.set("fs.s3a.access.key", config.aws.accessKey)
+    conf.set("fs.s3a.secret.key", config.aws.secretKey)
+    conf.set("fs.s3a.path.style.access", "true")
+    conf.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+    FileSystem.get(new java.net.URI(s"s3a://${config.aws.datalakeBucket}"), conf)
   }
 }
